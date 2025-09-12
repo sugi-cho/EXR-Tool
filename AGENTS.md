@@ -62,6 +62,12 @@
 ## セキュリティ/プライバシ
 - 機密情報・個人情報は `log/error.log` に貼らない。必要なら伏字化。
 - 認証情報（API キー等）をリポジトリに含めない。
+- コミット前に PII スキャナを必ず走らせる（pre-commit hook）。
+  - 初回のみ: `git config core.hooksPath .githooks`
+  - フックスクリプト: `.githooks/pre-commit` → `scripts/precommit_pii.ps1` を実行
+  - 動作: 追加/変更ファイルを走査し、PII 検出時に警告してコミットを中断。
+  - 例外（自動削除）: `log/` 配下や `*.log` は自動で該当部分を [REDACTED] に置換し再ステージ（コミット継続）。
+  - 手動一括置換: `PII_AUTOREDACT=1` を環境変数に設定すると全ファイルで自動置換（注意して使用）。
 
 ## 依頼テンプレート（人間→エージェント）
 ```
