@@ -160,13 +160,19 @@
         const out = prompt('生成する .cube の保存先パス:', 'linear_to_srgb.cube');
         if (!out) return;
         if (!(await ensureTauriReady())) return;
-        await invoke('make_lut', {
-          src: lutSrc?.value || 'linear',
-          dst: lutDst?.value || 'srgb',
-          size: parseInt(lutSize?.value ?? '1024',10) || 1024,
-          outPath: out,
-        });
-        appendLog('LUT生成: ' + out);
+        const src = (lutSrc?.value || 'linear').toLowerCase();
+        const dst = (lutDst?.value || 'srgb').toLowerCase();
+        const size = parseInt(lutSize?.value ?? '1024',10) || 1024;
+        if (src === 'linear' || src === 'srgb') {
+          // 1D LUT
+          await invoke('make_lut', { src, dst, size, outPath: out });
+          appendLog('1D LUT生成: ' + out);
+        } else {
+          // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
+          // トーンは src: linear, dst: srgb を既定とする。
+          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+          appendLog('3D LUT生成: ' + out);
+        }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
     });
 

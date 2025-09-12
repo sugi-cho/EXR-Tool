@@ -14,6 +14,7 @@ thiserror = "1"
 image = { version = "0.24", default-features = false, features = ["png", "exr"] }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
+nalgebra = { version = "0.32", default-features = false, features = ["std"] }
 
 # optional
 exr = { version = "1.72", optional = true }

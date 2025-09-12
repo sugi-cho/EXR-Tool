@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use nalgebra::{Matrix3, Vector3};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
@@ -279,5 +280,133 @@ pub fn make_1d_lut(src: ColorSpace, dst: ColorSpace, size: usize) -> String {
         let y = f(x).clamp(0.0, 1.0);
         out.push_str(&format!("{:.10} {:.10} {:.10}\n", y, y, y));
     }
+    out
+}
+
+// ---- Color Primaries and 3D LUT generation ----
+#[derive(Debug, Clone, Copy)]
+pub enum Primaries {
+    SrgbD65,      // sRGB / Rec.709 (D65)
+    Rec2020D65,   // BT.2020 (D65)
+    ACEScgD60,    // AP1 (D60)
+    ACES2065_1D60 // AP0 (D60)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TransferFn { Linear, Srgb, Gamma24, Gamma22 }
+
+fn tf_encode(v: f64, tf: TransferFn) -> f64 {
+    match tf {
+        TransferFn::Linear => v,
+        TransferFn::Srgb => {
+            if v <= 0.0031308 { 12.92 * v } else { 1.055 * v.powf(1.0/2.4) - 0.055 }
+        }
+        TransferFn::Gamma24 => v.max(0.0).powf(1.0/2.4),
+        TransferFn::Gamma22 => v.max(0.0).powf(1.0/2.2),
+    }
+}
+fn tf_decode(v: f64, tf: TransferFn) -> f64 {
+    match tf {
+        TransferFn::Linear => v,
+        TransferFn::Srgb => {
+            if v <= 0.04045 { v / 12.92 } else { ((v + 0.055)/1.055).powf(2.4) }
+        }
+        TransferFn::Gamma24 => v.max(0.0).powf(2.4),
+        TransferFn::Gamma22 => v.max(0.0).powf(2.2),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Chromaticities { rx:f64, ry:f64, gx:f64, gy:f64, bx:f64, by:f64, wx:f64, wy:f64 }
+
+fn xy_to_xyz(x: f64, y: f64) -> Vector3<f64> {
+    let X = x / y;
+    let Y = 1.0;
+    let Z = (1.0 - x - y) / y;
+    Vector3::new(X, Y, Z)
+}
+
+fn primaries_of(p: Primaries) -> Chromaticities {
+    match p {
+        Primaries::SrgbD65 => Chromaticities { rx:0.640, ry:0.330, gx:0.300, gy:0.600, bx:0.150, by:0.060, wx:0.3127, wy:0.3290 },
+        Primaries::Rec2020D65 => Chromaticities { rx:0.708, ry:0.292, gx:0.170, gy:0.797, bx:0.131, by:0.046, wx:0.3127, wy:0.3290 },
+        Primaries::ACEScgD60 => Chromaticities { rx:0.713, ry:0.293, gx:0.165, gy:0.830, bx:0.128, by:0.044, wx:0.32168, wy:0.33767 },
+        Primaries::ACES2065_1D60 => Chromaticities { rx:0.73470, ry:0.26530, gx:0.00000, gy:1.00000, bx:0.00010, by:-0.07700, wx:0.32168, wy:0.33767 },
+    }
+}
+
+fn rgb_to_xyz_matrix(p: Primaries) -> Matrix3<f64> {
+    let c = primaries_of(p);
+    let xr = xy_to_xyz(c.rx, c.ry);
+    let xg = xy_to_xyz(c.gx, c.gy);
+    let xb = xy_to_xyz(c.bx, c.by);
+    let w = xy_to_xyz(c.wx, c.wy);
+    let m = Matrix3::from_columns(&[xr, xg, xb]);
+    let s = m.try_inverse().unwrap() * w; // solve for scaling factors
+    m * Matrix3::from_diagonal(&s)
+}
+
+fn bradford_adapt_matrix(src_wp: Vector3<f64>, dst_wp: Vector3<f64>) -> Matrix3<f64> {
+    // Bradford matrices
+    let m = Matrix3::new(
+        0.8951, 0.2664, -0.1614,
+        -0.7502, 1.7135, 0.0367,
+        0.0389, -0.0685, 1.0296,
+    );
+    let m_inv = Matrix3::new(
+        0.9869929, -0.1470543, 0.1599627,
+        0.4323053, 0.5183603, 0.0492912,
+        -0.0085287, 0.0400428, 0.9684867,
+    );
+    let src_lms = m * src_wp;
+    let dst_lms = m * dst_wp;
+    let d = Matrix3::from_diagonal(&Vector3::new(dst_lms.x/src_lms.x, dst_lms.y/src_lms.y, dst_lms.z/src_lms.z));
+    m_inv * d * m
+}
+
+fn xyz_white(p: Primaries) -> Vector3<f64> {
+    let c = primaries_of(p);
+    xy_to_xyz(c.wx, c.wy)
+}
+
+fn rgb_to_rgb_matrix(src: Primaries, dst: Primaries) -> Matrix3<f64> {
+    let m_src = rgb_to_xyz_matrix(src);
+    let m_dst = rgb_to_xyz_matrix(dst);
+    let a = if primaries_of(src).wx == primaries_of(dst).wx && primaries_of(src).wy == primaries_of(dst).wy {
+        Matrix3::identity()
+    } else {
+        bradford_adapt_matrix(xyz_white(src), xyz_white(dst))
+    };
+    m_dst.try_inverse().unwrap() * a * m_src
+}
+
+pub fn make_3d_lut_cube(
+    src_prim: Primaries,
+    src_tf: TransferFn,
+    dst_prim: Primaries,
+    dst_tf: TransferFn,
+    size: usize,
+) -> String {
+    let m = rgb_to_rgb_matrix(src_prim, dst_prim);
+    let mut out = String::new();
+    out.push_str("TITLE \"exrtool 3D LUT\"\n");
+    out.push_str(&format!("LUT_3D_SIZE {}\n", size));
+    out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
+    // Order: blue-major or red-major? Our parser assumes r-major (x fastest).
+    for b in 0..size { for g in 0..size { for r in 0..size {
+        let rf = r as f64 / ((size-1).max(1) as f64);
+        let gf = g as f64 / ((size-1).max(1) as f64);
+        let bf = b as f64 / ((size-1).max(1) as f64);
+        // decode to linear in source
+        let rs = tf_decode(rf, src_tf);
+        let gs = tf_decode(gf, src_tf);
+        let bs = tf_decode(bf, src_tf);
+        let v = Vector3::new(rs, gs, bs);
+        let v_lin_dst = m * v; // gamut conversion in linear
+        let mut rd = tf_encode(v_lin_dst.x, dst_tf).clamp(0.0, 1.0);
+        let mut gd = tf_encode(v_lin_dst.y, dst_tf).clamp(0.0, 1.0);
+        let mut bd = tf_encode(v_lin_dst.z, dst_tf).clamp(0.0, 1.0);
+        out.push_str(&format!("{:.10} {:.10} {:.10}\n", rd, gd, bd));
+    }}}
     out
 }

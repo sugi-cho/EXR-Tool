@@ -47,8 +47,8 @@ enum Commands {
         y: usize,
     },
 
-    /// 1D LUT(.cube) を生成（Linear<->sRGB）
-    MakeLut {
+    /// 1D LUT(.cube) を生成（トーンカーブ変換）
+    MakeLut1D {
         /// 変換元: linear | srgb
         #[arg(long)]
         src: String,
@@ -61,7 +61,29 @@ enum Commands {
         /// 出力パス（.cube）
         #[arg(short, long)]
         out: PathBuf,
-    }
+    },
+
+    /// 3D LUT(.cube) を生成（色域+トーン変換）
+    MakeLut3D {
+        /// 変換元primaries: srgb | rec2020 | acescg | aces2065
+        #[arg(long)]
+        src_space: String,
+        /// 変換元トーン: linear | srgb | g24 | g22
+        #[arg(long, default_value = "linear")]
+        src_tf: String,
+        /// 変換先primaries: srgb | rec2020 | acescg | aces2065
+        #[arg(long)]
+        dst_space: String,
+        /// 変換先トーン: linear | srgb | g24 | g22
+        #[arg(long, default_value = "srgb")]
+        dst_tf: String,
+        /// テーブルサイズ（既定: 33）
+        #[arg(long, default_value_t = 33)]
+        size: usize,
+        /// 出力パス（.cube）
+        #[arg(short, long)]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -82,7 +104,7 @@ fn main() -> Result<()> {
             let px = img.get_linear(x, y).with_context(|| format!("座標が範囲外: {},{}", x, y))?;
             println!("linear RGBA: {:.7} {:.7} {:.7} {:.7}", px.r, px.g, px.b, px.a);
         }
-        Commands::MakeLut { src, dst, size, out } => {
+        Commands::MakeLut1D { src, dst, size, out } => {
             let parse_cs = |s:&str| -> Result<ColorSpace> {
                 match s.to_ascii_lowercase().as_str() {
                     "linear" => Ok(ColorSpace::Linear),
@@ -95,6 +117,26 @@ fn main() -> Result<()> {
             let text = make_1d_lut(cs_src, cs_dst, size);
             fs::write(&out, text)?;
             println!("LUT saved: {} ({} -> {}, size={})", out.display(), src, dst, size);
+        }
+        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, out } => {
+            use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
+            let parse_space = |s:&str| -> Result<Primaries> { match s.to_ascii_lowercase().as_str() {
+                "srgb"|"rec709" => Ok(Primaries::SrgbD65),
+                "rec2020"|"bt2020" => Ok(Primaries::Rec2020D65),
+                "acescg"|"ap1" => Ok(Primaries::ACEScgD60),
+                "aces2065"|"ap0"|"aces" => Ok(Primaries::ACES2065_1D60),
+                _ => Err(anyhow::anyhow!("unknown space: {}", s)) } };
+            let parse_tf = |s:&str| -> Result<TransferFn> { match s.to_ascii_lowercase().as_str() {
+                "linear" => Ok(TransferFn::Linear),
+                "srgb" => Ok(TransferFn::Srgb),
+                "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
+                "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
+                _ => Err(anyhow::anyhow!("unknown transfer: {}", s)) } };
+            let sp = parse_space(&src_space)?; let dt = parse_space(&dst_space)?;
+            let st = parse_tf(&src_tf)?; let tt = parse_tf(&dst_tf)?;
+            let text = make_3d_lut_cube(sp, st, dt, tt, size);
+            fs::write(&out, text)?;
+            println!("3D LUT saved: {} ({} {} -> {} {}, size={})", out.display(), src_space, src_tf, dst_space, dst_tf, size);
         }
     }
     Ok(())

@@ -160,10 +160,29 @@ fn make_lut(src: String, dst: String, size: u32, out_path: String) -> Result<(),
     std::fs::write(out_path, text).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn make_lut3d(src_space: String, src_tf: String, dst_space: String, dst_tf: String, size: u32, out_path: String) -> Result<(), String> {
+    use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
+    let parse_space = |s:&str| -> Result<Primaries, String> { match s.to_ascii_lowercase().as_str() {
+        "srgb"|"rec709" => Ok(Primaries::SrgbD65),
+        "rec2020"|"bt2020" => Ok(Primaries::Rec2020D65),
+        "acescg"|"ap1" => Ok(Primaries::ACEScgD60),
+        "aces2065"|"ap0"|"aces" => Ok(Primaries::ACES2065_1D60),
+        _ => Err(format!("unknown space: {}", s)) } };
+    let parse_tf = |s:&str| -> Result<TransferFn, String> { match s.to_ascii_lowercase().as_str() {
+        "linear" => Ok(TransferFn::Linear),
+        "srgb" => Ok(TransferFn::Srgb),
+        "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
+        "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
+        _ => Err(format!("unknown transfer: {}", s)) } };
+    let text = make_3d_lut_cube(parse_space(&src_space)?, parse_tf(&src_tf)?, parse_space(&dst_space)?, parse_tf(&dst_tf)?, size as usize);
+    std::fs::write(out_path, text).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(AppState::default())))
-        .invoke_handler(tauri::generate_handler![open_exr, probe_pixel, export_preview_png, read_log, clear_log, update_preview, make_lut])
+        .invoke_handler(tauri::generate_handler![open_exr, probe_pixel, export_preview_png, read_log, clear_log, update_preview, make_lut, make_lut3d])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
