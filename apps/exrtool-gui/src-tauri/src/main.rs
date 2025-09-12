@@ -102,6 +102,31 @@ fn export_preview_png(state: tauri::State<Arc<Mutex<AppState>>>, out_path: Strin
 }
 
 #[tauri::command]
+fn update_preview(
+    state: tauri::State<Arc<Mutex<AppState>>>,
+    max_size: u32,
+    exposure: f32,
+    gamma: f32,
+    lut_path: Option<String>,
+) -> Result<(u32,u32,String), String> {
+    let mut s = state.lock();
+    let img = s.image.as_ref().ok_or_else(|| "image not loaded".to_string())?;
+    let lut = if let Some(p) = lut_path { 
+        let t = std::fs::read_to_string(&p).map_err(|e| e.to_string())?; 
+        Some(parse_cube(&t).map_err(|e| e.to_string())?)
+    } else { None };
+    let preview = generate_preview(img, max_size, exposure, gamma, lut.as_ref());
+    let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone()).ok_or_else(|| "invalid image".to_string())?;
+    let mut buf: Vec<u8> = Vec::new();
+    image::DynamicImage::ImageRgba8(png).write_to(&mut std::io::Cursor::new(&mut buf), image::ImageOutputFormat::Png).map_err(|e| e.to_string())?;
+    let b64 = BASE64.encode(&buf);
+
+    s.scale = (img.width as f32 / preview.width as f32).max(img.height as f32 / preview.height as f32).max(1.0);
+    s.preview = Some(preview);
+    Ok((s.preview.as_ref().unwrap().width, s.preview.as_ref().unwrap().height, b64))
+}
+
+#[tauri::command]
 fn read_log() -> Result<String, String> {
     match std::fs::read_to_string(log_path()) {
         Ok(s) => Ok(s),
@@ -127,10 +152,18 @@ fn log_append(msg: &str) {
     }
 }
 
+#[tauri::command]
+fn make_lut(src: String, dst: String, size: u32, out_path: String) -> Result<(), String> {
+    use exrtool_core::{make_1d_lut, ColorSpace};
+    let parse = |s:&str| -> Result<ColorSpace, String> { match s.to_ascii_lowercase().as_str() { "linear"=>Ok(ColorSpace::Linear), "srgb"=>Ok(ColorSpace::Srgb), _=>Err(format!("unknown colorspace: {}", s)) } };
+    let text = make_1d_lut(parse(&src)?, parse(&dst)?, size as usize);
+    std::fs::write(out_path, text).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(AppState::default())))
-        .invoke_handler(tauri::generate_handler![open_exr, probe_pixel, export_preview_png, read_log, clear_log])
+        .invoke_handler(tauri::generate_handler![open_exr, probe_pixel, export_preview_png, read_log, clear_log, update_preview, make_lut])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

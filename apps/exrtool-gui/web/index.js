@@ -77,6 +77,12 @@
     const saveBtn = getEl('save');
     const cv = getEl('cv');
     const pathEl = getEl('path');
+    const expEl = getEl('exp');
+    const gammaEl = getEl('gamma');
+    const lutSrc = getEl('lut-src');
+    const lutDst = getEl('lut-dst');
+    const lutSize = getEl('lut-size');
+    const makeLutBtn = getEl('make-lut');
 
     if (openBtn) openBtn.addEventListener('click', openExr);
 
@@ -118,9 +124,54 @@
       } catch (_) { /* ignore */ }
     });
 
+    // Exposure/Gamma live update (debounced)
+    let timer = null;
+    const scheduleUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try {
+          if (!(await ensureTauriReady())) return;
+          const maxEl = getEl('max');
+          const lutEl = getEl('lut');
+          const [w,h,b64] = await invoke('update_preview', {
+            maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
+            exposure: parseFloat(expEl?.value ?? '0'),
+            gamma: parseFloat(gammaEl?.value ?? '2.2'),
+            lutPath: (lutEl && lutEl.value.trim()) ? lutEl.value.trim() : null,
+          });
+          const img = new Image();
+          const info = getEl('info');
+          img.onload = () => {
+            const ctx = cv.getContext('2d');
+            cv.width = w; cv.height = h;
+            ctx.clearRect(0,0,w,h);
+            ctx.drawImage(img, 0, 0);
+            if (info) info.textContent = `preview: ${w}x${h}`;
+          };
+          img.src = 'data:image/png;base64,' + b64;
+        } catch (e) { appendLog('update失敗: ' + e); }
+      }, 120);
+    };
+    if (expEl) expEl.addEventListener('input', scheduleUpdate);
+    if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
+
+    if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
+      try {
+        const out = prompt('生成する .cube の保存先パス:', 'linear_to_srgb.cube');
+        if (!out) return;
+        if (!(await ensureTauriReady())) return;
+        await invoke('make_lut', {
+          src: lutSrc?.value || 'linear',
+          dst: lutDst?.value || 'srgb',
+          size: parseInt(lutSize?.value ?? '1024',10) || 1024,
+          outPath: out,
+        });
+        appendLog('LUT生成: ' + out);
+      } catch (e) { appendLog('LUT生成失敗: ' + e); }
+    });
+
     // 早期にTauri注入が完了するケース向け
     ensureTauriReady(2000);
     appendLog('UI ready');
   });
 })();
-

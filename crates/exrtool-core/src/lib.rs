@@ -73,13 +73,34 @@ pub fn generate_preview(
 
     for oy in 0..out_h {
         for ox in 0..out_w {
-            let src_x = ((ox as f32) / scale).floor().clamp(0.0, (w - 1) as f32) as usize;
-            let src_y = ((oy as f32) / scale).floor().clamp(0.0, (h - 1) as f32) as usize;
-            let si = (src_y * img.width + src_x) * 4;
-            let mut r = img.rgba_f32[si + 0];
-            let mut g = img.rgba_f32[si + 1];
-            let mut b = img.rgba_f32[si + 2];
-            let a = img.rgba_f32[si + 3];
+            // bilinear sampling
+            let sx = (ox as f32) / scale;
+            let sy = (oy as f32) / scale;
+            let x0 = sx.floor().clamp(0.0, (w - 1) as f32) as i32;
+            let y0 = sy.floor().clamp(0.0, (h - 1) as f32) as i32;
+            let x1 = (x0 + 1).min(w as i32 - 1);
+            let y1 = (y0 + 1).min(h as i32 - 1);
+            let tx = (sx - x0 as f32).clamp(0.0, 1.0);
+            let ty = (sy - y0 as f32).clamp(0.0, 1.0);
+
+            let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
+                let idx = (y as usize * img.width + x as usize) * 4;
+                (
+                    img.rgba_f32[idx+0],
+                    img.rgba_f32[idx+1],
+                    img.rgba_f32[idx+2],
+                    img.rgba_f32[idx+3]
+                )
+            };
+            let (r00,g00,b00,a00) = sample(x0,y0);
+            let (r10,g10,b10,a10) = sample(x1,y0);
+            let (r01,g01,b01,a01) = sample(x0,y1);
+            let (r11,g11,b11,a11) = sample(x1,y1);
+            let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
+            let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
+            let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
+            let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
+            let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
 
             // exposure in stops (2^exposure)
             let m = 2.0f32.powf(exposure);
@@ -228,4 +249,35 @@ pub fn srgb_encode(v: f32) -> u8 {
     let x = v.max(0.0);
     let srgb = if x <= 0.0031308 { 12.92 * x } else { 1.055 * x.powf(1.0/2.4) - 0.055 };
     (srgb.clamp(0.0,1.0) * 255.0 + 0.5).floor() as u8
+}
+
+// ---- LUT Generation (1D, Linear<->sRGB) ----
+#[derive(Debug, Clone, Copy)]
+pub enum ColorSpace { Linear, Srgb }
+
+fn srgb_oetf(linear: f32) -> f32 { // linear->srgb
+    if linear <= 0.0031308 { 12.92 * linear } else { 1.055 * linear.powf(1.0/2.4) - 0.055 }
+}
+fn srgb_eotf(srgb: f32) -> f32 { // srgb->linear
+    if srgb <= 0.04045 { srgb / 12.92 } else { ((srgb + 0.055) / 1.055).powf(2.4) }
+}
+
+pub fn make_1d_lut(src: ColorSpace, dst: ColorSpace, size: usize) -> String {
+    let mut out = String::new();
+    out.push_str("TITLE \"exrtool 1D LUT\"\n");
+    out.push_str(&format!("LUT_1D_SIZE {}\n", size));
+    out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
+    for i in 0..size {
+        let x = (i as f32) / ((size-1).max(1) as f32);
+        let f = |v:f32| -> f32 {
+            match (src, dst) {
+                (ColorSpace::Linear, ColorSpace::Srgb) => srgb_oetf(v),
+                (ColorSpace::Srgb, ColorSpace::Linear) => srgb_eotf(v),
+                _ => v,
+            }
+        };
+        let y = f(x).clamp(0.0, 1.0);
+        out.push_str(&format!("{:.10} {:.10} {:.10}\n", y, y, y));
+    }
+    out
 }

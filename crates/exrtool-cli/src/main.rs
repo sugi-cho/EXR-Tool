@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube};
+use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace};
 use std::path::PathBuf;
 use std::fs;
 
@@ -45,6 +45,22 @@ enum Commands {
         /// y座標
         #[arg(long)]
         y: usize,
+    },
+
+    /// 1D LUT(.cube) を生成（Linear<->sRGB）
+    MakeLut {
+        /// 変換元: linear | srgb
+        #[arg(long)]
+        src: String,
+        /// 変換先: linear | srgb
+        #[arg(long)]
+        dst: String,
+        /// テーブルサイズ（例: 1024）
+        #[arg(long, default_value_t = 1024)]
+        size: usize,
+        /// 出力パス（.cube）
+        #[arg(short, long)]
+        out: PathBuf,
     }
 }
 
@@ -66,7 +82,20 @@ fn main() -> Result<()> {
             let px = img.get_linear(x, y).with_context(|| format!("座標が範囲外: {},{}", x, y))?;
             println!("linear RGBA: {:.7} {:.7} {:.7} {:.7}", px.r, px.g, px.b, px.a);
         }
+        Commands::MakeLut { src, dst, size, out } => {
+            let parse_cs = |s:&str| -> Result<ColorSpace> {
+                match s.to_ascii_lowercase().as_str() {
+                    "linear" => Ok(ColorSpace::Linear),
+                    "srgb" => Ok(ColorSpace::Srgb),
+                    _ => Err(anyhow::anyhow!("unknown colorspace: {}", s))
+                }
+            };
+            let cs_src = parse_cs(&src)?;
+            let cs_dst = parse_cs(&dst)?;
+            let text = make_1d_lut(cs_src, cs_dst, size);
+            fs::write(&out, text)?;
+            println!("LUT saved: {} ({} -> {}, size={})", out.display(), src, dst, size);
+        }
     }
     Ok(())
 }
-
