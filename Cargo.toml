@@ -1,0 +1,11 @@
+[workspace]
+members = [
+  "crates/exrtool-core",
+  "crates/exrtool-cli",
+  "apps/exrtool-gui/src-tauri"
+]
+resolver = "2"
+
+[workspace.metadata]
+description = "EXR preview + metadata tool (core/cli/gui)"
+

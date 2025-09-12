@@ -1,0 +1,19 @@
+[package]
+name = "exrtool-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+# `exr` クレートでの純Rust読込。将来OIIOに置き換え可能。
+use_exr_crate = ["dep:exr"]
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+image = { version = "0.24", default-features = false, features = ["png", "exr"] }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+
+# optional
+exr = { version = "1.72", optional = true }

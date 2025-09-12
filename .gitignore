@@ -1,0 +1,14 @@
+# Rust
+target/
+**/Cargo.lock
+
+# Node / Tauri
+node_modules/
+dist/
+apps/exrtool-gui/web/.vite/
+*.log
+.DS_Store
+
+# VSCode
+.vscode/
+

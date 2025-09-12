@@ -1,0 +1,26 @@
+[package]
+name = "exrtool-gui"
+version = "0.1.0"
+description = "Tauri GUI for ExrTool"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+base64 = "0.22"
+
+[dependencies]
+tauri = { version = "1", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+parking_lot = "0.12"
+exrtool-core = { path = "../../../crates/exrtool-core" }
+base64 = "0.22"
+image = { version = "0.24", default-features = false, features = ["png"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+# `exr`クレートでの読込を有効化
+exr_pure = ["exrtool-core/use_exr_crate"]

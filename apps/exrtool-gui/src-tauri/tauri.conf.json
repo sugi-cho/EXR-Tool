@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "distDir": "../web",
+    "devPath": "../web"
+  },
+  "package": {
+    "productName": "ExrTool",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "withGlobalTauri": true,
+    "allowlist": {
+      "all": false,
+      "dialog": { "all": true }
+    },
+    "windows": [
+      {
+        "title": "ExrTool",
+        "width": 1280,
+        "height": 800,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

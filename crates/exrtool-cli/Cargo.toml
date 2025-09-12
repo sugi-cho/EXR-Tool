@@ -1,0 +1,14 @@
+[package]
+name = "exrtool-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+exrtool-core = { path = "../exrtool-core", features = [] }
+
+[features]
+default = []
+# `exr`クレートを使った純Rust読込を有効化
+exr_pure = ["exrtool-core/use_exr_crate"]
