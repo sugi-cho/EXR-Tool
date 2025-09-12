@@ -4,14 +4,14 @@
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
     "distDir": "../web",
-    "devPath": "../web"
+    "devPath": "../web",
+    "withGlobalTauri": true
   },
   "package": {
     "productName": "ExrTool",
     "version": "0.1.0"
   },
   "tauri": {
-    "withGlobalTauri": true,
     "allowlist": {
       "all": false,
       "dialog": { "all": true }
