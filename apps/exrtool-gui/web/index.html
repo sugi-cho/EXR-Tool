@@ -16,16 +16,19 @@
         <label>Max <input id="max" type="number" value="2048"/></label>
         <label>Exp <input id="exp" type="range" min="-8" max="8" step="0.1" value="0"/></label>
         <label>Gamma <input id="gamma" type="range" min="0.1" max="3.0" step="0.1" value="2.2"/></label>
+        <label><input id="use-state-lut" type="checkbox"/> Use LUT(in-memory)</label>
         <button id="open">開く</button>
         <button id="save">PNG書き出し</button>
         <button id="showlog">ログ表示</button>
         <button id="clearlog">ログ消去</button>
       </div>
       <div class="toolbar">
-        <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option></select></label>
-        <label>→ 先<select id="lut-dst"><option>srgb</option><option>linear</option></select></label>
-        <label>Size <input id="lut-size" type="number" value="1024" min="16" step="1"/></label>
+        <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
+        <label>→ 先<select id="lut-dst"><option>srgb</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
+        <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
         <button id="make-lut">LUT生成(.cube)</button>
+        <button id="apply-preset">Preset適用(メモリ)</button>
+        <button id="clear-lut">LUT解除</button>
       </div>
       <div class="info" id="info">-</div>
     </header>
