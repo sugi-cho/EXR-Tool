@@ -31,3 +31,7 @@ Tauri GUI の起動（要: Node不要の静的フロントエンド。依存取�
 ```bash
 cargo tauri dev -p exrtool-gui -F exr_pure
 ```
+
+## ドキュメント
+
+色域・白色点・Bradford 変換については [docs/LUT.md](docs/LUT.md) を参照してください。
