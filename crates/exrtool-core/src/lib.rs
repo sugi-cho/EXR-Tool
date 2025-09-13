@@ -1,3 +1,4 @@
+pub mod rules;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
