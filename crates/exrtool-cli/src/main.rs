@@ -80,9 +80,9 @@ enum Commands {
         /// テーブルサイズ（既定: 33）
         #[arg(long, default_value_t = 33)]
         size: usize,
-        /// クリップモード: clip | noclip
-        #[arg(long, default_value = "clip")]
-        clip_mode: String,
+        /// 1D シェーパーサイズ（0で無効）
+        #[arg(long, default_value_t = 1024)]
+        shaper_size: usize,
         /// 出力パス（.cube）
         #[arg(short, long)]
         out: PathBuf,
@@ -121,8 +121,8 @@ fn main() -> Result<()> {
             fs::write(&out, text)?;
             println!("LUT saved: {} ({} -> {}, size={})", out.display(), src, dst, size);
         }
-        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, clip_mode, out } => {
-            use exrtool_core::{Primaries, TransferFn, ClipMode, make_3d_lut_cube};
+        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, shaper_size, out } => {
+            use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
             let parse_space = |s:&str| -> Result<Primaries> { match s.to_ascii_lowercase().as_str() {
                 "srgb"|"rec709" => Ok(Primaries::SrgbD65),
                 "rec2020"|"bt2020" => Ok(Primaries::Rec2020D65),
@@ -141,13 +141,9 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("unknown clip mode: {}", s)) } };
             let sp = parse_space(&src_space)?; let dt = parse_space(&dst_space)?;
             let st = parse_tf(&src_tf)?; let tt = parse_tf(&dst_tf)?;
-            let cm = parse_clip(&clip_mode)?;
-            let text = make_3d_lut_cube(sp, st, dt, tt, size, cm);
+            let text = make_3d_lut_cube(sp, st, dt, tt, size, shaper_size);
             fs::write(&out, text)?;
-            println!(
-                "3D LUT saved: {} ({} {} -> {} {}, size={}, clip={})",
-                out.display(), src_space, src_tf, dst_space, dst_tf, size, clip_mode
-            );
+            println!("3D LUT saved: {} ({} {} -> {} {}, size={} shaper={})", out.display(), src_space, src_tf, dst_space, dst_tf, size, shaper_size);
         }
     }
     Ok(())

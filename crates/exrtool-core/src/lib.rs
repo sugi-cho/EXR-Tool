@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use nalgebra::{Matrix3, Vector3};
+use rayon::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
@@ -135,89 +136,94 @@ pub fn export_png(path: &Path, preview: &PreviewImage) -> Result<()> {
 
 // ---- LUT (.cube minimal) ----
 #[derive(Debug, Clone)]
-pub enum LutKind { Lut1D, Lut3D }
-
-#[derive(Debug, Clone)]
 pub struct Lut {
-    kind: LutKind,
-    size: usize,
-    table: Vec<[f32;3]>, // 1D: size entries, 3D: size^3 entries (r-major)
+    shaper_size: usize,
+    shaper_table: Vec<[f32;3]>,
+    cube_size: usize,
+    cube_table: Vec<[f32;3]>,
 }
 
 impl Lut {
     pub fn apply(&self, rgb: [f32;3]) -> [f32;3] {
-        match self.kind {
-            LutKind::Lut1D => self.apply_1d(rgb),
-            LutKind::Lut3D => self.apply_3d(rgb),
+        let mut v = rgb;
+        if self.shaper_size > 0 {
+            v = apply_1d(&v, self.shaper_size, &self.shaper_table);
         }
-    }
-
-    fn apply_1d(&self, rgb: [f32;3]) -> [f32;3] {
-        let s = (self.size - 1) as f32;
-        let mut out = [0.0;3];
-        for i in 0..3 {
-            let x = rgb[i].clamp(0.0, 1.0) * s;
-            let i0 = x.floor() as usize;
-            let i1 = (i0 + 1).min(self.size - 1);
-            let t = x - i0 as f32;
-            let c0 = self.table[i0][i];
-            let c1 = self.table[i1][i];
-            out[i] = c0 + (c1 - c0) * t;
+        if self.cube_size > 0 {
+            v = apply_3d(&v, self.cube_size, &self.cube_table);
         }
-        out
-    }
-
-    fn apply_3d(&self, rgb: [f32;3]) -> [f32;3] {
-        let n = self.size as i32;
-        let s = (n - 1) as f32;
-        let rx = (rgb[0].clamp(0.0, 1.0) * s).min(s);
-        let gy = (rgb[1].clamp(0.0, 1.0) * s).min(s);
-        let bz = (rgb[2].clamp(0.0, 1.0) * s).min(s);
-        let x0 = rx.floor() as i32; let y0 = gy.floor() as i32; let z0 = bz.floor() as i32;
-        let x1 = (x0 + 1).min(n-1); let y1 = (y0 + 1).min(n-1); let z1 = (z0 + 1).min(n-1);
-        let tx = rx - x0 as f32; let ty = gy - y0 as f32; let tz = bz - z0 as f32;
-
-        let idx = |x:i32,y:i32,z:i32| -> usize {
-            // r-major: r changes fastest: idx = z*n*n + y*n + x
-            (z as usize * self.size * self.size) + (y as usize * self.size) + x as usize
-        };
-
-        let c000 = self.table[idx(x0,y0,z0)];
-        let c100 = self.table[idx(x1,y0,z0)];
-        let c010 = self.table[idx(x0,y1,z0)];
-        let c110 = self.table[idx(x1,y1,z0)];
-        let c001 = self.table[idx(x0,y0,z1)];
-        let c101 = self.table[idx(x1,y0,z1)];
-        let c011 = self.table[idx(x0,y1,z1)];
-        let c111 = self.table[idx(x1,y1,z1)];
-
-        let lerp = |a:[f32;3],b:[f32;3],t:f32| [
-            a[0]+(b[0]-a[0])*t,
-            a[1]+(b[1]-a[1])*t,
-            a[2]+(b[2]-a[2])*t
-        ];
-        let c00 = lerp(c000,c100,tx); let c10 = lerp(c010,c110,tx);
-        let c01 = lerp(c001,c101,tx); let c11 = lerp(c011,c111,tx);
-        let c0 = lerp(c00,c10,ty); let c1 = lerp(c01,c11,ty);
-        lerp(c0,c1,tz)
+        v
     }
 }
 
+fn apply_1d(rgb: &[f32;3], size: usize, table: &[[f32;3]]) -> [f32;3] {
+    let s = (size - 1) as f32;
+    let mut out = [0.0;3];
+    for i in 0..3 {
+        let x = rgb[i].clamp(0.0, 1.0) * s;
+        let i0 = x.floor() as usize;
+        let i1 = (i0 + 1).min(size - 1);
+        let t = x - i0 as f32;
+        let c0 = table[i0][i];
+        let c1 = table[i1][i];
+        out[i] = c0 + (c1 - c0) * t;
+    }
+    out
+}
+
+fn apply_3d(rgb: &[f32;3], size: usize, table: &[[f32;3]]) -> [f32;3] {
+    let n = size as i32;
+    let s = (n - 1) as f32;
+    let rx = (rgb[0].clamp(0.0, 1.0) * s).min(s);
+    let gy = (rgb[1].clamp(0.0, 1.0) * s).min(s);
+    let bz = (rgb[2].clamp(0.0, 1.0) * s).min(s);
+    let x0 = rx.floor() as i32; let y0 = gy.floor() as i32; let z0 = bz.floor() as i32;
+    let x1 = (x0 + 1).min(n-1); let y1 = (y0 + 1).min(n-1); let z1 = (z0 + 1).min(n-1);
+    let tx = rx - x0 as f32; let ty = gy - y0 as f32; let tz = bz - z0 as f32;
+
+    let idx = |x:i32,y:i32,z:i32| -> usize {
+        (z as usize * size * size) + (y as usize * size) + x as usize
+    };
+
+    let c000 = table[idx(x0,y0,z0)];
+    let c100 = table[idx(x1,y0,z0)];
+    let c010 = table[idx(x0,y1,z0)];
+    let c110 = table[idx(x1,y1,z0)];
+    let c001 = table[idx(x0,y0,z1)];
+    let c101 = table[idx(x1,y0,z1)];
+    let c011 = table[idx(x0,y1,z1)];
+    let c111 = table[idx(x1,y1,z1)];
+
+    let lerp = |a:[f32;3],b:[f32;3],t:f32| [
+        a[0]+(b[0]-a[0])*t,
+        a[1]+(b[1]-a[1])*t,
+        a[2]+(b[2]-a[2])*t
+    ];
+    let c00 = lerp(c000,c100,tx); let c10 = lerp(c010,c110,tx);
+    let c01 = lerp(c001,c101,tx); let c11 = lerp(c011,c111,tx);
+    let c0 = lerp(c00,c10,ty); let c1 = lerp(c01,c11,ty);
+    lerp(c0,c1,tz)
+}
+
 pub fn parse_cube(text: &str) -> Result<Lut> {
-    let mut size: Option<usize> = None;
-    let mut table: Vec<[f32;3]> = Vec::new();
-    let mut kind = LutKind::Lut1D;
+    enum Section { None, Lut1D, Lut3D }
+    let mut section = Section::None;
+    let mut shaper_size = 0usize;
+    let mut shaper_table: Vec<[f32;3]> = Vec::new();
+    let mut cube_size = 0usize;
+    let mut cube_table: Vec<[f32;3]> = Vec::new();
+
     for line in text.lines() {
         let l = line.trim();
         if l.is_empty() || l.starts_with('#') { continue; }
-        if let Some(rest) = l.strip_prefix("LUT_1D_SIZE") { 
-            size = Some(rest.trim().parse()?);
-            kind = LutKind::Lut1D;
+        if let Some(rest) = l.strip_prefix("LUT_1D_SIZE") {
+            shaper_size = rest.trim().parse()?;
+            section = Section::Lut1D;
             continue;
         }
         if let Some(rest) = l.strip_prefix("LUT_3D_SIZE") {
-            size = Some(rest.trim().parse()?);
-            kind = LutKind::Lut3D;
+            cube_size = rest.trim().parse()?;
+            section = Section::Lut3D;
             continue;
         }
         if l.starts_with("TITLE") || l.starts_with("DOMAIN_1D") || l.starts_with("DOMAIN_2D") || l.starts_with("DOMAIN_MIN") || l.starts_with("DOMAIN_MAX") {
@@ -228,16 +234,22 @@ pub fn parse_cube(text: &str) -> Result<Lut> {
             let r: f32 = parts[0].parse()?;
             let g: f32 = parts[1].parse()?;
             let b: f32 = parts[2].parse()?;
-            table.push([r,g,b]);
+            match section {
+                Section::Lut1D => shaper_table.push([r,g,b]),
+                Section::Lut3D => cube_table.push([r,g,b]),
+                Section::None => {}
+            }
         }
     }
-    let size = size.ok_or_else(|| anyhow!(".cube: missing LUT size"))?;
-    if matches!(kind, LutKind::Lut3D) {
-        if table.len() != size*size*size { return Err(anyhow!(".cube: invalid 3D table length")); }
-    } else {
-        if table.len() != size { return Err(anyhow!(".cube: invalid 1D table length")); }
+
+    if shaper_size > 0 && shaper_table.len() != shaper_size {
+        return Err(anyhow!(".cube: invalid 1D table length"));
     }
-    Ok(Lut{ kind, size, table })
+    if cube_size > 0 && cube_table.len() != cube_size*cube_size*cube_size {
+        return Err(anyhow!(".cube: invalid 3D table length"));
+    }
+
+    Ok(Lut{ shaper_size, shaper_table, cube_size, cube_table })
 }
 
 // ---- Utilities ----
@@ -324,6 +336,15 @@ fn tf_decode(v: f64, tf: TransferFn) -> f64 {
     }
 }
 
+/// Apply 1D tone curve conversion from `src` transfer to `dst` transfer.
+pub fn apply_tone_curve(rgb: [f32;3], src: TransferFn, dst: TransferFn) -> [f32;3] {
+    [
+        tf_encode(tf_decode(rgb[0] as f64, src), dst) as f32,
+        tf_encode(tf_decode(rgb[1] as f64, src), dst) as f32,
+        tf_encode(tf_decode(rgb[2] as f64, src), dst) as f32,
+    ]
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Chromaticities { rx:f64, ry:f64, gx:f64, gy:f64, bx:f64, by:f64, wx:f64, wy:f64 }
 
@@ -394,33 +415,46 @@ pub fn make_3d_lut_cube(
     dst_prim: Primaries,
     dst_tf: TransferFn,
     size: usize,
-    clip: ClipMode,
+    shaper_size: usize,
 ) -> String {
     let m = rgb_to_rgb_matrix(src_prim, dst_prim);
     let mut out = String::new();
     out.push_str("TITLE \"exrtool 3D LUT\"\n");
+    if shaper_size > 0 {
+        out.push_str(&format!("LUT_1D_SIZE {}\n", shaper_size));
+        out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
+        for i in 0..shaper_size {
+            let x = i as f32 / ((shaper_size-1).max(1) as f32);
+            let y = apply_tone_curve([x, x, x], src_tf, TransferFn::Linear)[0] as f64;
+            out.push_str(&format!("{:.10} {:.10} {:.10}\n", y, y, y));
+        }
+    }
     out.push_str(&format!("LUT_3D_SIZE {}\n", size));
     out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
-    // Order: blue-major or red-major? Our parser assumes r-major (x fastest).
-    for b in 0..size { for g in 0..size { for r in 0..size {
-        let rf = r as f64 / ((size-1).max(1) as f64);
-        let gf = g as f64 / ((size-1).max(1) as f64);
-        let bf = b as f64 / ((size-1).max(1) as f64);
-        // decode to linear in source
-        let rs = tf_decode(rf, src_tf);
-        let gs = tf_decode(gf, src_tf);
-        let bs = tf_decode(bf, src_tf);
-        let v = Vector3::new(rs, gs, bs);
-        let v_lin_dst = m * v; // gamut conversion in linear
-        let mut rd = tf_encode(v_lin_dst.x, dst_tf);
-        let mut gd = tf_encode(v_lin_dst.y, dst_tf);
-        let mut bd = tf_encode(v_lin_dst.z, dst_tf);
-        if let ClipMode::Clip = clip {
-            rd = rd.clamp(0.0, 1.0);
-            gd = gd.clamp(0.0, 1.0);
-            bd = bd.clamp(0.0, 1.0);
-        }
-        out.push_str(&format!("{:.10} {:.10} {:.10}\n", rd, gd, bd));
-    }}}
+    let denom = (size - 1).max(1) as f64;
+    let lines: Vec<String> = (0..size * size * size)
+        .into_par_iter()
+        .map(|i| {
+            let r = i % size;
+            let g = (i / size) % size;
+            let b = i / (size * size);
+            let rf = r as f64 / denom;
+            let gf = g as f64 / denom;
+            let bf = b as f64 / denom;
+            // decode to linear in source
+            let rs = tf_decode(rf, src_tf);
+            let gs = tf_decode(gf, src_tf);
+            let bs = tf_decode(bf, src_tf);
+            let v = Vector3::new(rs, gs, bs);
+            let v_lin_dst = m * v; // gamut conversion in linear
+            let rd = tf_encode(v_lin_dst.x, dst_tf).clamp(0.0, 1.0);
+            let gd = tf_encode(v_lin_dst.y, dst_tf).clamp(0.0, 1.0);
+            let bd = tf_encode(v_lin_dst.z, dst_tf).clamp(0.0, 1.0);
+            format!("{:.10} {:.10} {:.10}\n", rd, gd, bd)
+        })
+        .collect();
+    for line in lines {
+        out.push_str(&line);
+    }
     out
 }
