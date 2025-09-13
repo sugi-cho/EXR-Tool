@@ -256,6 +256,7 @@ fn set_lut_3d(
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
+        1024,
     );
     let lut = parse_cube(&text).map_err(|e| e.to_string())?;
     state.lock().lut = Some(lut);
@@ -291,7 +292,7 @@ fn make_lut3d(src_space: String, src_tf: String, dst_space: String, dst_tf: Stri
         "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
         "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
         _ => Err(format!("unknown transfer: {}", s)) } };
-    let text = make_3d_lut_cube(parse_space(&src_space)?, parse_tf(&src_tf)?, parse_space(&dst_space)?, parse_tf(&dst_tf)?, size as usize);
+    let text = make_3d_lut_cube(parse_space(&src_space)?, parse_tf(&src_tf)?, parse_space(&dst_space)?, parse_tf(&dst_tf)?, size as usize, 1024);
     std::fs::write(out_path, text).map_err(|e| e.to_string())
 }
 
