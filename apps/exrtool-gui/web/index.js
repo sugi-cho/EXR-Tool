@@ -1,6 +1,7 @@
 (() => {
   let invoke = null; // 解決済みの invoke（nullなら未解決）
   let imgW = 0, imgH = 0;
+  let useStateLutEnabled = false; // LUT in-memory 使用フラグ
 
   function getEl(id) {
     const el = document.getElementById(id);
@@ -19,12 +20,15 @@
     console.log(line);
   }
 
-  function debounce(fn, delay = 120) {
-    let timer = null;
-    return (...args) => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => fn(...args), delay);
-    };
+  function showError(msg) {
+    let el = document.getElementById('errordiv');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'errordiv';
+      el.style.color = 'red';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
   }
 
   async function ensureTauriReady(timeoutMs = 5000) {
@@ -53,7 +57,7 @@
     const ctx = cv.getContext('2d');
 
     const path = pathEl.value.trim();
-    const lutPath = lutEl ? (lutEl.value.trim() || null) : null;
+    const lutPath = (!useStateLutEnabled && lutEl) ? (lutEl.value.trim() || null) : null;
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
       const [w, h, b64] = await invoke('open_exr', {
@@ -95,6 +99,8 @@
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
 
+    useStateLutEnabled = !!useStateLut?.checked;
+
     if (openBtn) openBtn.addEventListener('click', openExr);
 
     if (browseBtn) browseBtn.addEventListener('click', async () => {
@@ -135,38 +141,47 @@
       } catch (_) { /* ignore */ }
     });
 
-    // Exposure/Gamma live update (debounced + RAF)
-    const updatePreview = async () => {
-      try {
-        if (!(await ensureTauriReady())) return;
-        const maxEl = getEl('max');
-        const lutEl = getEl('lut');
-        const [w, h, b64] = await invoke('update_preview', {
-          maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
-          exposure: parseFloat(expEl?.value ?? '0'),
-          gamma: parseFloat(gammaEl?.value ?? '2.2'),
-          lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
-          useStateLut: !!(useStateLut?.checked),
-        });
-        const img = new Image();
-        const info = getEl('info');
-        img.onload = () => {
-          requestAnimationFrame(() => {
+    // Exposure/Gamma live update (debounced)
+    let timer = null;
+    const scheduleUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try {
+          if (!(await ensureTauriReady())) return;
+          const maxEl = getEl('max');
+          const lutEl = getEl('lut');
+          const [w,h,b64] = await invoke('update_preview', {
+            maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
+            exposure: parseFloat(expEl?.value ?? '0'),
+            gamma: parseFloat(gammaEl?.value ?? '2.2'),
+            lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
+            useStateLut: useStateLutEnabled,
+          });
+          const img = new Image();
+          const info = getEl('info');
+          img.onload = () => {
             const ctx = cv.getContext('2d');
             cv.width = w; cv.height = h;
             ctx.clearRect(0, 0, w, h);
             ctx.drawImage(img, 0, 0);
             if (info) info.textContent = `preview: ${w}x${h}`;
-          });
-        };
-        img.src = 'data:image/png;base64,' + b64;
-      } catch (e) { appendLog('update失敗: ' + e); }
+          };
+          img.src = 'data:image/png;base64,' + b64;
+          showError('');
+        } catch (e) {
+          appendLog('update失敗: ' + e);
+          showError('update失敗: ' + e);
+        }
+      }, 120);
     };
 
     const scheduleUpdate = debounce(updatePreview, 120);
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
     if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
-    if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
+    if (useStateLut) useStateLut.addEventListener('change', () => {
+      useStateLutEnabled = !!useStateLut.checked;
+      scheduleUpdate();
+    });
 
     if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
       try {
@@ -201,13 +216,14 @@
           await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)) });
         }
         if (useStateLut) useStateLut.checked = true;
+        useStateLutEnabled = true;
         scheduleUpdate();
         appendLog('Preset適用: ' + src + ' -> ' + dst);
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
 
     if (clearLutBtn) clearLutBtn.addEventListener('click', async () => {
-      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
+      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; useStateLutEnabled = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
     });
 
     // 早期にTauri注入が完了するケース向け
