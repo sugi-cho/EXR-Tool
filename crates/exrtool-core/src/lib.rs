@@ -559,10 +559,10 @@ struct Chromaticities {
 }
 
 fn xy_to_xyz(x: f64, y: f64) -> Vector3<f64> {
-    let X = x / y;
-    let Y = 1.0;
-    let Z = (1.0 - x - y) / y;
-    Vector3::new(X, Y, Z)
+    let x_xyz = x / y;
+    let y_xyz = 1.0;
+    let z_xyz = (1.0 - x - y) / y;
+    Vector3::new(x_xyz, y_xyz, z_xyz)
 }
 
 fn primaries_of(p: Primaries) -> Chromaticities {
