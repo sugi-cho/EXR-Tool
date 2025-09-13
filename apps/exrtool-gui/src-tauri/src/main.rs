@@ -128,6 +128,8 @@ fn update_preview(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
+    tone_map: String,
+    tone_map_order: String,
     use_state_lut: bool,
     high_quality: bool,
 ) -> Result<(u32, u32, String), String> {

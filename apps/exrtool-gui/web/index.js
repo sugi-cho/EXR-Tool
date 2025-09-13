@@ -186,6 +186,8 @@
           if (!(await ensureTauriReady())) return;
           const maxEl = getEl('max');
           const lutEl = getEl('lut');
+          const tmEl = getEl('tonemap');
+          const tmOrderEl = getEl('tm-order');
           const [w,h,b64] = await invoke('update_preview', {
             maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
             exposure: parseFloat(expEl?.value ?? '0'),

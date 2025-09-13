@@ -3,9 +3,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace, PreviewQuality};
 use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "exrtool")] 
+#[command(name = "exrtool")]
 #[command(about = "EXR プレビューとピクセル検査のCLI", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -107,26 +108,47 @@ fn main() -> Result<()> {
             let pq = match quality { Quality::Fast => PreviewQuality::Fast, Quality::High => PreviewQuality::High };
             let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
             export_png(&out, &preview)?;
-            println!("w={} h={} => {}", preview.width, preview.height, out.display());
+            println!(
+                "w={} h={} => {}",
+                preview.width,
+                preview.height,
+                out.display()
+            );
         }
         Commands::Probe { input, x, y } => {
             let img = load_exr_basic(&input)?;
-            let px = img.get_linear(x, y).with_context(|| format!("座標が範囲外: {},{}", x, y))?;
-            println!("linear RGBA: {:.7} {:.7} {:.7} {:.7}", px.r, px.g, px.b, px.a);
+            let px = img
+                .get_linear(x, y)
+                .with_context(|| format!("座標が範囲外: {},{}", x, y))?;
+            println!(
+                "linear RGBA: {:.7} {:.7} {:.7} {:.7}",
+                px.r, px.g, px.b, px.a
+            );
         }
-        Commands::MakeLut1D { src, dst, size, out } => {
-            let parse_cs = |s:&str| -> Result<ColorSpace> {
+        Commands::MakeLut1D {
+            src,
+            dst,
+            size,
+            out,
+        } => {
+            let parse_cs = |s: &str| -> Result<ColorSpace> {
                 match s.to_ascii_lowercase().as_str() {
                     "linear" => Ok(ColorSpace::Linear),
                     "srgb" => Ok(ColorSpace::Srgb),
-                    _ => Err(anyhow::anyhow!("unknown colorspace: {}", s))
+                    _ => Err(anyhow::anyhow!("unknown colorspace: {}", s)),
                 }
             };
             let cs_src = parse_cs(&src)?;
             let cs_dst = parse_cs(&dst)?;
             let text = make_1d_lut(cs_src, cs_dst, size);
             fs::write(&out, text)?;
-            println!("LUT saved: {} ({} -> {}, size={})", out.display(), src, dst, size);
+            println!(
+                "LUT saved: {} ({} -> {}, size={})",
+                out.display(),
+                src,
+                dst,
+                size
+            );
         }
         Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, shaper_size, out } => {
             use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};

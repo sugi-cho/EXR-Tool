@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use nalgebra::{Matrix3, Vector3};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use nalgebra::{Matrix3, Vector3};
@@ -20,6 +21,19 @@ pub struct LinearPixel {
     pub a: f32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum ToneMapKind {
+    None,
+    Aces,
+    Filmic,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum ToneMapOrder {
+    BeforeLut,
+    AfterLut,
+}
+
 #[derive(Debug)]
 pub struct LoadedExr {
     pub width: usize,
@@ -30,9 +44,11 @@ pub struct LoadedExr {
 
 impl LoadedExr {
     pub fn get_linear(&self, x: usize, y: usize) -> Option<LinearPixel> {
-        if x >= self.width || y >= self.height { return None; }
+        if x >= self.width || y >= self.height {
+            return None;
+        }
         let idx = (y * self.width + x) * 4;
-        Some(LinearPixel{
+        Some(LinearPixel {
             r: self.rgba_f32[idx + 0],
             g: self.rgba_f32[idx + 1],
             b: self.rgba_f32[idx + 2],
@@ -51,7 +67,11 @@ pub fn load_exr_basic(path: &Path) -> Result<LoadedExr> {
     if data.len() != (w as usize * h as usize * 4) {
         return Err(anyhow!("invalid rgba32f buffer size"));
     }
-    Ok(LoadedExr { width: w as usize, height: h as usize, rgba_f32: data })
+    Ok(LoadedExr {
+        width: w as usize,
+        height: h as usize,
+        rgba_f32: data,
+    })
 }
 
 // ---- Preview Generation ----
@@ -163,7 +183,11 @@ pub fn generate_preview(
         }
     }
 
-    PreviewImage { width: out_w, height: out_h, rgba8 }
+    PreviewImage {
+        width: out_w,
+        height: out_h,
+        rgba8,
+    }
 }
 
 pub fn export_png(path: &Path, preview: &PreviewImage) -> Result<()> {
@@ -265,7 +289,12 @@ pub fn parse_cube(text: &str) -> Result<Lut> {
             section = Section::Lut3D;
             continue;
         }
-        if l.starts_with("TITLE") || l.starts_with("DOMAIN_1D") || l.starts_with("DOMAIN_2D") || l.starts_with("DOMAIN_MIN") || l.starts_with("DOMAIN_MAX") {
+        if l.starts_with("TITLE")
+            || l.starts_with("DOMAIN_1D")
+            || l.starts_with("DOMAIN_2D")
+            || l.starts_with("DOMAIN_MIN")
+            || l.starts_with("DOMAIN_MAX")
+        {
             continue;
         }
         let parts: Vec<_> = l.split_whitespace().collect();
@@ -292,26 +321,85 @@ pub fn parse_cube(text: &str) -> Result<Lut> {
 }
 
 // ---- Utilities ----
-pub fn apply_gamma(rgb: [f32;3], gamma: f32) -> [f32;3] {
-    if gamma <= 0.0001 { return rgb; }
-    [rgb[0].powf(1.0/gamma), rgb[1].powf(1.0/gamma), rgb[2].powf(1.0/gamma)]
+fn apply_tone_map(rgb: [f32; 3], kind: ToneMapKind) -> [f32; 3] {
+    match kind {
+        ToneMapKind::None => rgb,
+        ToneMapKind::Aces => {
+            fn tm(x: f32) -> f32 {
+                let a = 2.51;
+                let b = 0.03;
+                let c = 2.43;
+                let d = 0.59;
+                let e = 0.14;
+                ((x * (a * x + b)) / (x * (c * x + d) + e)).clamp(0.0, 1.0)
+            }
+            [tm(rgb[0]), tm(rgb[1]), tm(rgb[2])]
+        }
+        ToneMapKind::Filmic => {
+            fn tm(x: f32) -> f32 {
+                let a = 0.15;
+                let b = 0.50;
+                let c = 0.10;
+                let d = 0.20;
+                let e = 0.02;
+                let f = 0.30;
+                let w = 11.2;
+                let num = x * (a * x + c * b) + d * e;
+                let den = x * (a * x + b) + d * f;
+                let val = num / den - e / f;
+                let num_w = w * (a * w + c * b) + d * e;
+                let den_w = w * (a * w + b) + d * f;
+                let white = num_w / den_w - e / f;
+                (val / white).clamp(0.0, 1.0)
+            }
+            [tm(rgb[0]), tm(rgb[1]), tm(rgb[2])]
+        }
+    }
+}
+
+pub fn apply_gamma(rgb: [f32; 3], gamma: f32) -> [f32; 3] {
+    if gamma <= 0.0001 {
+        return rgb;
+    }
+    [
+        rgb[0].powf(1.0 / gamma),
+        rgb[1].powf(1.0 / gamma),
+        rgb[2].powf(1.0 / gamma),
+    ]
 }
 
 pub fn srgb_encode(v: f32) -> u8 {
     let x = v.max(0.0);
-    let srgb = if x <= 0.0031308 { 12.92 * x } else { 1.055 * x.powf(1.0/2.4) - 0.055 };
-    (srgb.clamp(0.0,1.0) * 255.0 + 0.5).floor() as u8
+    let srgb = if x <= 0.0031308 {
+        12.92 * x
+    } else {
+        1.055 * x.powf(1.0 / 2.4) - 0.055
+    };
+    (srgb.clamp(0.0, 1.0) * 255.0 + 0.5).floor() as u8
 }
 
 // ---- LUT Generation (1D, Linear<->sRGB) ----
 #[derive(Debug, Clone, Copy)]
-pub enum ColorSpace { Linear, Srgb }
-
-fn srgb_oetf(linear: f32) -> f32 { // linear->srgb
-    if linear <= 0.0031308 { 12.92 * linear } else { 1.055 * linear.powf(1.0/2.4) - 0.055 }
+pub enum ColorSpace {
+    Linear,
+    Srgb,
 }
-fn srgb_eotf(srgb: f32) -> f32 { // srgb->linear
-    if srgb <= 0.04045 { srgb / 12.92 } else { ((srgb + 0.055) / 1.055).powf(2.4) }
+
+fn srgb_oetf(linear: f32) -> f32 {
+    // linear->srgb
+    if linear <= 0.0031308 {
+        12.92 * linear
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    }
+}
+fn srgb_eotf(srgb: f32) -> f32 {
+    // srgb->linear
+    if srgb <= 0.04045 {
+        srgb / 12.92
+    } else {
+        ((srgb + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 pub fn make_1d_lut(src: ColorSpace, dst: ColorSpace, size: usize) -> String {
@@ -320,8 +408,8 @@ pub fn make_1d_lut(src: ColorSpace, dst: ColorSpace, size: usize) -> String {
     out.push_str(&format!("LUT_1D_SIZE {}\n", size));
     out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
     for i in 0..size {
-        let x = (i as f32) / ((size-1).max(1) as f32);
-        let f = |v:f32| -> f32 {
+        let x = (i as f32) / ((size - 1).max(1) as f32);
+        let f = |v: f32| -> f32 {
             match (src, dst) {
                 (ColorSpace::Linear, ColorSpace::Srgb) => srgb_oetf(v),
                 (ColorSpace::Srgb, ColorSpace::Linear) => srgb_eotf(v),
@@ -337,14 +425,19 @@ pub fn make_1d_lut(src: ColorSpace, dst: ColorSpace, size: usize) -> String {
 // ---- Color Primaries and 3D LUT generation ----
 #[derive(Debug, Clone, Copy)]
 pub enum Primaries {
-    SrgbD65,      // sRGB / Rec.709 (D65)
-    Rec2020D65,   // BT.2020 (D65)
-    ACEScgD60,    // AP1 (D60)
-    ACES2065_1D60 // AP0 (D60)
+    SrgbD65,       // sRGB / Rec.709 (D65)
+    Rec2020D65,    // BT.2020 (D65)
+    ACEScgD60,     // AP1 (D60)
+    ACES2065_1D60, // AP0 (D60)
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TransferFn { Linear, Srgb, Gamma24, Gamma22 }
+pub enum TransferFn {
+    Linear,
+    Srgb,
+    Gamma24,
+    Gamma22,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ClipMode {
@@ -358,17 +451,25 @@ fn tf_encode(v: f64, tf: TransferFn) -> f64 {
     match tf {
         TransferFn::Linear => v,
         TransferFn::Srgb => {
-            if v <= 0.0031308 { 12.92 * v } else { 1.055 * v.powf(1.0/2.4) - 0.055 }
+            if v <= 0.0031308 {
+                12.92 * v
+            } else {
+                1.055 * v.powf(1.0 / 2.4) - 0.055
+            }
         }
-        TransferFn::Gamma24 => v.max(0.0).powf(1.0/2.4),
-        TransferFn::Gamma22 => v.max(0.0).powf(1.0/2.2),
+        TransferFn::Gamma24 => v.max(0.0).powf(1.0 / 2.4),
+        TransferFn::Gamma22 => v.max(0.0).powf(1.0 / 2.2),
     }
 }
 fn tf_decode(v: f64, tf: TransferFn) -> f64 {
     match tf {
         TransferFn::Linear => v,
         TransferFn::Srgb => {
-            if v <= 0.04045 { v / 12.92 } else { ((v + 0.055)/1.055).powf(2.4) }
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
         }
         TransferFn::Gamma24 => v.max(0.0).powf(2.4),
         TransferFn::Gamma22 => v.max(0.0).powf(2.2),
@@ -385,7 +486,16 @@ pub fn apply_tone_curve(rgb: [f32;3], src: TransferFn, dst: TransferFn) -> [f32;
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Chromaticities { rx:f64, ry:f64, gx:f64, gy:f64, bx:f64, by:f64, wx:f64, wy:f64 }
+struct Chromaticities {
+    rx: f64,
+    ry: f64,
+    gx: f64,
+    gy: f64,
+    bx: f64,
+    by: f64,
+    wx: f64,
+    wy: f64,
+}
 
 fn xy_to_xyz(x: f64, y: f64) -> Vector3<f64> {
     let X = x / y;
@@ -396,10 +506,46 @@ fn xy_to_xyz(x: f64, y: f64) -> Vector3<f64> {
 
 fn primaries_of(p: Primaries) -> Chromaticities {
     match p {
-        Primaries::SrgbD65 => Chromaticities { rx:0.640, ry:0.330, gx:0.300, gy:0.600, bx:0.150, by:0.060, wx:0.3127, wy:0.3290 },
-        Primaries::Rec2020D65 => Chromaticities { rx:0.708, ry:0.292, gx:0.170, gy:0.797, bx:0.131, by:0.046, wx:0.3127, wy:0.3290 },
-        Primaries::ACEScgD60 => Chromaticities { rx:0.713, ry:0.293, gx:0.165, gy:0.830, bx:0.128, by:0.044, wx:0.32168, wy:0.33767 },
-        Primaries::ACES2065_1D60 => Chromaticities { rx:0.73470, ry:0.26530, gx:0.00000, gy:1.00000, bx:0.00010, by:-0.07700, wx:0.32168, wy:0.33767 },
+        Primaries::SrgbD65 => Chromaticities {
+            rx: 0.640,
+            ry: 0.330,
+            gx: 0.300,
+            gy: 0.600,
+            bx: 0.150,
+            by: 0.060,
+            wx: 0.3127,
+            wy: 0.3290,
+        },
+        Primaries::Rec2020D65 => Chromaticities {
+            rx: 0.708,
+            ry: 0.292,
+            gx: 0.170,
+            gy: 0.797,
+            bx: 0.131,
+            by: 0.046,
+            wx: 0.3127,
+            wy: 0.3290,
+        },
+        Primaries::ACEScgD60 => Chromaticities {
+            rx: 0.713,
+            ry: 0.293,
+            gx: 0.165,
+            gy: 0.830,
+            bx: 0.128,
+            by: 0.044,
+            wx: 0.32168,
+            wy: 0.33767,
+        },
+        Primaries::ACES2065_1D60 => Chromaticities {
+            rx: 0.73470,
+            ry: 0.26530,
+            gx: 0.00000,
+            gy: 1.00000,
+            bx: 0.00010,
+            by: -0.07700,
+            wx: 0.32168,
+            wy: 0.33767,
+        },
     }
 }
 
@@ -417,18 +563,19 @@ fn rgb_to_xyz_matrix(p: Primaries) -> Matrix3<f64> {
 fn bradford_adapt_matrix(src_wp: Vector3<f64>, dst_wp: Vector3<f64>) -> Matrix3<f64> {
     // Bradford matrices
     let m = Matrix3::new(
-        0.8951, 0.2664, -0.1614,
-        -0.7502, 1.7135, 0.0367,
-        0.0389, -0.0685, 1.0296,
+        0.8951, 0.2664, -0.1614, -0.7502, 1.7135, 0.0367, 0.0389, -0.0685, 1.0296,
     );
     let m_inv = Matrix3::new(
-        0.9869929, -0.1470543, 0.1599627,
-        0.4323053, 0.5183603, 0.0492912,
-        -0.0085287, 0.0400428, 0.9684867,
+        0.9869929, -0.1470543, 0.1599627, 0.4323053, 0.5183603, 0.0492912, -0.0085287, 0.0400428,
+        0.9684867,
     );
     let src_lms = m * src_wp;
     let dst_lms = m * dst_wp;
-    let d = Matrix3::from_diagonal(&Vector3::new(dst_lms.x/src_lms.x, dst_lms.y/src_lms.y, dst_lms.z/src_lms.z));
+    let d = Matrix3::from_diagonal(&Vector3::new(
+        dst_lms.x / src_lms.x,
+        dst_lms.y / src_lms.y,
+        dst_lms.z / src_lms.z,
+    ));
     m_inv * d * m
 }
 
@@ -440,7 +587,9 @@ fn xyz_white(p: Primaries) -> Vector3<f64> {
 fn rgb_to_rgb_matrix(src: Primaries, dst: Primaries) -> Matrix3<f64> {
     let m_src = rgb_to_xyz_matrix(src);
     let m_dst = rgb_to_xyz_matrix(dst);
-    let a = if primaries_of(src).wx == primaries_of(dst).wx && primaries_of(src).wy == primaries_of(dst).wy {
+    let a = if primaries_of(src).wx == primaries_of(dst).wx
+        && primaries_of(src).wy == primaries_of(dst).wy
+    {
         Matrix3::identity()
     } else {
         bradford_adapt_matrix(xyz_white(src), xyz_white(dst))
