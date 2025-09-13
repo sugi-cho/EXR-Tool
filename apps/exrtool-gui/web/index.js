@@ -19,6 +19,14 @@
     console.log(line);
   }
 
+  function debounce(fn, delay = 120) {
+    let timer = null;
+    return (...args) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), delay);
+    };
+  }
+
   async function ensureTauriReady(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -127,35 +135,35 @@
       } catch (_) { /* ignore */ }
     });
 
-    // Exposure/Gamma live update (debounced)
-    let timer = null;
-    const scheduleUpdate = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(async () => {
-        try {
-          if (!(await ensureTauriReady())) return;
-          const maxEl = getEl('max');
-          const lutEl = getEl('lut');
-          const [w,h,b64] = await invoke('update_preview', {
-            maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
-            exposure: parseFloat(expEl?.value ?? '0'),
-            gamma: parseFloat(gammaEl?.value ?? '2.2'),
-            lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
-            useStateLut: !!(useStateLut?.checked),
-          });
-          const img = new Image();
-          const info = getEl('info');
-          img.onload = () => {
+    // Exposure/Gamma live update (debounced + RAF)
+    const updatePreview = async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const maxEl = getEl('max');
+        const lutEl = getEl('lut');
+        const [w, h, b64] = await invoke('update_preview', {
+          maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
+          exposure: parseFloat(expEl?.value ?? '0'),
+          gamma: parseFloat(gammaEl?.value ?? '2.2'),
+          lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
+          useStateLut: !!(useStateLut?.checked),
+        });
+        const img = new Image();
+        const info = getEl('info');
+        img.onload = () => {
+          requestAnimationFrame(() => {
             const ctx = cv.getContext('2d');
             cv.width = w; cv.height = h;
-            ctx.clearRect(0,0,w,h);
+            ctx.clearRect(0, 0, w, h);
             ctx.drawImage(img, 0, 0);
             if (info) info.textContent = `preview: ${w}x${h}`;
-          };
-          img.src = 'data:image/png;base64,' + b64;
-        } catch (e) { appendLog('update失敗: ' + e); }
-      }, 120);
+          });
+        };
+        img.src = 'data:image/png;base64,' + b64;
+      } catch (e) { appendLog('update失敗: ' + e); }
     };
+
+    const scheduleUpdate = debounce(updatePreview, 120);
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
     if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
     if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
