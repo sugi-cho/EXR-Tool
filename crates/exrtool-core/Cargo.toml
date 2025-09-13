@@ -18,3 +18,10 @@ nalgebra = { version = "0.32", default-features = false, features = ["std"] }
 
 # optional
 exr = { version = "1.72", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "lut_gen"
+harness = false
