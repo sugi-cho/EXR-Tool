@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace};
-use std::path::PathBuf;
+use exrtool_core::{
+    apply_rules_file, export_png, generate_preview, load_exr_basic, make_1d_lut, parse_cube,
+    ColorSpace,
+};
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "exrtool")] 
+#[command(name = "exrtool")]
 #[command(about = "EXR プレビューとピクセル検査のCLI", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -84,59 +87,132 @@ enum Commands {
         #[arg(short, long)]
         out: PathBuf,
     },
+
+    /// ルールファイルに基づき処理を適用
+    Apply {
+        /// ルールファイル(YAML)
+        #[arg(long)]
+        rules: PathBuf,
+        /// 実行内容のみ表示
+        #[arg(long)]
+        dry_run: bool,
+        /// 出力を上書きする際にバックアップ(.bak)を作成
+        #[arg(long)]
+        backup: bool,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Preview { input, out, max_size, exposure, gamma, lut } => {
+        Commands::Preview {
+            input,
+            out,
+            max_size,
+            exposure,
+            gamma,
+            lut,
+        } => {
             let img = load_exr_basic(&input)?;
-            let lut_obj = if let Some(p) = lut { 
-                let txt = fs::read_to_string(p)?; 
+            let lut_obj = if let Some(p) = lut {
+                let txt = fs::read_to_string(p)?;
                 Some(parse_cube(&txt)?)
-            } else { None };
+            } else {
+                None
+            };
             let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref());
             export_png(&out, &preview)?;
-            println!("w={} h={} => {}", preview.width, preview.height, out.display());
+            println!(
+                "w={} h={} => {}",
+                preview.width,
+                preview.height,
+                out.display()
+            );
         }
         Commands::Probe { input, x, y } => {
             let img = load_exr_basic(&input)?;
-            let px = img.get_linear(x, y).with_context(|| format!("座標が範囲外: {},{}", x, y))?;
-            println!("linear RGBA: {:.7} {:.7} {:.7} {:.7}", px.r, px.g, px.b, px.a);
+            let px = img
+                .get_linear(x, y)
+                .with_context(|| format!("座標が範囲外: {},{}", x, y))?;
+            println!(
+                "linear RGBA: {:.7} {:.7} {:.7} {:.7}",
+                px.r, px.g, px.b, px.a
+            );
         }
-        Commands::MakeLut1D { src, dst, size, out } => {
-            let parse_cs = |s:&str| -> Result<ColorSpace> {
+        Commands::MakeLut1D {
+            src,
+            dst,
+            size,
+            out,
+        } => {
+            let parse_cs = |s: &str| -> Result<ColorSpace> {
                 match s.to_ascii_lowercase().as_str() {
                     "linear" => Ok(ColorSpace::Linear),
                     "srgb" => Ok(ColorSpace::Srgb),
-                    _ => Err(anyhow::anyhow!("unknown colorspace: {}", s))
+                    _ => Err(anyhow::anyhow!("unknown colorspace: {}", s)),
                 }
             };
             let cs_src = parse_cs(&src)?;
             let cs_dst = parse_cs(&dst)?;
             let text = make_1d_lut(cs_src, cs_dst, size);
             fs::write(&out, text)?;
-            println!("LUT saved: {} ({} -> {}, size={})", out.display(), src, dst, size);
+            println!(
+                "LUT saved: {} ({} -> {}, size={})",
+                out.display(),
+                src,
+                dst,
+                size
+            );
         }
-        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, out } => {
-            use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
-            let parse_space = |s:&str| -> Result<Primaries> { match s.to_ascii_lowercase().as_str() {
-                "srgb"|"rec709" => Ok(Primaries::SrgbD65),
-                "rec2020"|"bt2020" => Ok(Primaries::Rec2020D65),
-                "acescg"|"ap1" => Ok(Primaries::ACEScgD60),
-                "aces2065"|"ap0"|"aces" => Ok(Primaries::ACES2065_1D60),
-                _ => Err(anyhow::anyhow!("unknown space: {}", s)) } };
-            let parse_tf = |s:&str| -> Result<TransferFn> { match s.to_ascii_lowercase().as_str() {
-                "linear" => Ok(TransferFn::Linear),
-                "srgb" => Ok(TransferFn::Srgb),
-                "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
-                "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
-                _ => Err(anyhow::anyhow!("unknown transfer: {}", s)) } };
-            let sp = parse_space(&src_space)?; let dt = parse_space(&dst_space)?;
-            let st = parse_tf(&src_tf)?; let tt = parse_tf(&dst_tf)?;
+        Commands::MakeLut3D {
+            src_space,
+            src_tf,
+            dst_space,
+            dst_tf,
+            size,
+            out,
+        } => {
+            use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+            let parse_space = |s: &str| -> Result<Primaries> {
+                match s.to_ascii_lowercase().as_str() {
+                    "srgb" | "rec709" => Ok(Primaries::SrgbD65),
+                    "rec2020" | "bt2020" => Ok(Primaries::Rec2020D65),
+                    "acescg" | "ap1" => Ok(Primaries::ACEScgD60),
+                    "aces2065" | "ap0" | "aces" => Ok(Primaries::ACES2065_1D60),
+                    _ => Err(anyhow::anyhow!("unknown space: {}", s)),
+                }
+            };
+            let parse_tf = |s: &str| -> Result<TransferFn> {
+                match s.to_ascii_lowercase().as_str() {
+                    "linear" => Ok(TransferFn::Linear),
+                    "srgb" => Ok(TransferFn::Srgb),
+                    "g24" | "gamma2.4" => Ok(TransferFn::Gamma24),
+                    "g22" | "gamma2.2" => Ok(TransferFn::Gamma22),
+                    _ => Err(anyhow::anyhow!("unknown transfer: {}", s)),
+                }
+            };
+            let sp = parse_space(&src_space)?;
+            let dt = parse_space(&dst_space)?;
+            let st = parse_tf(&src_tf)?;
+            let tt = parse_tf(&dst_tf)?;
             let text = make_3d_lut_cube(sp, st, dt, tt, size);
             fs::write(&out, text)?;
-            println!("3D LUT saved: {} ({} {} -> {} {}, size={})", out.display(), src_space, src_tf, dst_space, dst_tf, size);
+            println!(
+                "3D LUT saved: {} ({} {} -> {} {}, size={})",
+                out.display(),
+                src_space,
+                src_tf,
+                dst_space,
+                dst_tf,
+                size
+            );
+        }
+        Commands::Apply {
+            rules,
+            dry_run,
+            backup,
+        } => {
+            apply_rules_file(&rules, dry_run, backup)?;
         }
     }
     Ok(())
