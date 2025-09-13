@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use nalgebra::{Matrix3, Vector3};
+use rayon::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
@@ -392,21 +393,30 @@ pub fn make_3d_lut_cube(
     out.push_str("TITLE \"exrtool 3D LUT\"\n");
     out.push_str(&format!("LUT_3D_SIZE {}\n", size));
     out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
-    // Order: blue-major or red-major? Our parser assumes r-major (x fastest).
-    for b in 0..size { for g in 0..size { for r in 0..size {
-        let rf = r as f64 / ((size-1).max(1) as f64);
-        let gf = g as f64 / ((size-1).max(1) as f64);
-        let bf = b as f64 / ((size-1).max(1) as f64);
-        // decode to linear in source
-        let rs = tf_decode(rf, src_tf);
-        let gs = tf_decode(gf, src_tf);
-        let bs = tf_decode(bf, src_tf);
-        let v = Vector3::new(rs, gs, bs);
-        let v_lin_dst = m * v; // gamut conversion in linear
-        let mut rd = tf_encode(v_lin_dst.x, dst_tf).clamp(0.0, 1.0);
-        let mut gd = tf_encode(v_lin_dst.y, dst_tf).clamp(0.0, 1.0);
-        let mut bd = tf_encode(v_lin_dst.z, dst_tf).clamp(0.0, 1.0);
-        out.push_str(&format!("{:.10} {:.10} {:.10}\n", rd, gd, bd));
-    }}}
+    let denom = (size - 1).max(1) as f64;
+    let lines: Vec<String> = (0..size * size * size)
+        .into_par_iter()
+        .map(|i| {
+            let r = i % size;
+            let g = (i / size) % size;
+            let b = i / (size * size);
+            let rf = r as f64 / denom;
+            let gf = g as f64 / denom;
+            let bf = b as f64 / denom;
+            // decode to linear in source
+            let rs = tf_decode(rf, src_tf);
+            let gs = tf_decode(gf, src_tf);
+            let bs = tf_decode(bf, src_tf);
+            let v = Vector3::new(rs, gs, bs);
+            let v_lin_dst = m * v; // gamut conversion in linear
+            let rd = tf_encode(v_lin_dst.x, dst_tf).clamp(0.0, 1.0);
+            let gd = tf_encode(v_lin_dst.y, dst_tf).clamp(0.0, 1.0);
+            let bd = tf_encode(v_lin_dst.z, dst_tf).clamp(0.0, 1.0);
+            format!("{:.10} {:.10} {:.10}\n", rd, gd, bd)
+        })
+        .collect();
+    for line in lines {
+        out.push_str(&line);
+    }
     out
 }
