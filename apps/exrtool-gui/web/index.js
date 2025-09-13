@@ -94,6 +94,7 @@
     const lutSrc = getEl('lut-src');
     const lutDst = getEl('lut-dst');
     const lutSize = getEl('lut-size');
+    const lutPreset = getEl('lut-preset');
     const makeLutBtn = getEl('make-lut');
     const applyPresetBtn = getEl('apply-preset');
     const clearLutBtn = getEl('clear-lut');
@@ -243,9 +244,31 @@
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
 
+    if (lutPreset) lutPreset.addEventListener('change', async () => {
+      const val = lutPreset.value;
+      if (!val) return;
+      const [src, dst] = val.split('-');
+      if (lutSrc) lutSrc.value = src;
+      if (lutDst) lutDst.value = dst;
+      try {
+        if (!(await ensureTauriReady())) return;
+        const size = parseInt(lutSize?.value ?? '33',10) || 33;
+        if (src === 'linear' || src === 'srgb') {
+          await invoke('set_lut_1d', { src, dst, size });
+        } else {
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)) });
+        }
+        if (useStateLut) useStateLut.checked = true;
+        scheduleUpdate();
+        appendLog('Preset適用: ' + src + ' -> ' + dst);
+      } catch (e) { appendLog('Preset適用失敗: ' + e); }
+    });
+
     if (clearLutBtn) clearLutBtn.addEventListener('click', async () => {
       try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; useStateLutEnabled = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
     });
+
+    if (lutPreset) lutPreset.dispatchEvent(new Event('change'));
 
     // 早期にTauri注入が完了するケース向け
     ensureTauriReady(2000);
