@@ -2,15 +2,31 @@
 
 use anyhow::Result;
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use exrtool_core::{export_png, generate_preview, parse_cube, LoadedExr, Lut, PreviewImage};
+
+#[derive(Clone, Serialize, Deserialize)]
+struct LutPreset {
+    name: String,
+    src_space: String,
+    src_tf: String,
+    dst_space: String,
+    dst_tf: String,
+    size: u32,
+}
+
+struct PresetState {
+    presets: Vec<LutPreset>,
+}
 
 struct AppState {
     image: Option<LoadedExr>,
@@ -30,26 +46,38 @@ impl Default for AppState {
     }
 }
 
+struct OpenProgress {
+    cancel: AtomicBool,
+}
+
+impl Default for OpenProgress {
+    fn default() -> Self {
+        Self { cancel: AtomicBool::new(false) }
+    }
+}
+
 #[tauri::command]
-fn open_exr(
+async fn open_exr(
+    window: tauri::Window,
     state: tauri::State<Arc<Mutex<AppState>>>,
+    prog: tauri::State<Arc<OpenProgress>>,
     path: String,
     max_size: u32,
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
+    high_quality: bool,
 ) -> Result<(u32, u32, String), String> {
     let pathbuf = PathBuf::from(&path);
     log_append(&format!(
-        "open_exr: path='{}' max={} exp={} gamma={} lut={:?}",
-        path, max_size, exposure, gamma, lut_path
+        "open_exr: path='{}' max={} exp={} gamma={} lut={:?} hq={}",
+        path, max_size, exposure, gamma, lut_path, high_quality
     ));
     let img = exrtool_core::load_exr_basic(&pathbuf).map_err(|e| {
         log_append(&format!("open_exr: load failed: {}", e));
         e.to_string()
     })?;
-
-    let file_lut: Option<Lut> = if let Some(p) = lut_path {
+    if let Some(p) = lut_path {
         match std::fs::read_to_string(&p) {
             Ok(t) => match parse_cube(&t) {
                 Ok(lut) => Some(lut),
@@ -67,15 +95,10 @@ fn open_exr(
         None
     };
 
+    prog.cancel.store(false, Ordering::SeqCst);
     let s_lut = state.lock().lut.clone();
-    let preview = generate_preview(
-        &img,
-        max_size,
-        exposure,
-        gamma,
-        s_lut.as_ref(),
-        file_lut.as_ref(),
-    );
+    let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
+    let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref(), pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| "invalid image".to_string())?;
     let mut buf: Vec<u8> = Vec::new();
@@ -87,9 +110,6 @@ fn open_exr(
         .map_err(|e| e.to_string())?;
     let b64 = BASE64.encode(&buf);
 
-    let scale = (img.width as f32 / preview.width as f32)
-        .max(img.height as f32 / preview.height as f32)
-        .max(1.0);
     let mut s = state.lock();
     s.image = Some(img);
     s.preview = Some(preview);
@@ -100,10 +120,13 @@ fn open_exr(
         s.preview.as_ref().unwrap().height
     ));
 
+    window.emit("open-progress", 100.0).ok();
+
     Ok((
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
+        stats,
     ))
 }
 
@@ -114,22 +137,29 @@ fn update_preview(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
+    tone_map: String,
+    tone_map_order: String,
     use_state_lut: bool,
+    high_quality: bool,
 ) -> Result<(u32, u32, String), String> {
-    // 追加LUTの読み込み
-    let file_lut: Option<Lut> = if let Some(p) = &lut_path {
-        match std::fs::read_to_string(p) {
-            Ok(t) => match parse_cube(&t) {
-                Ok(l) => Some(l),
+    // 事前にファイルからLUTを読み込んでおく（必要なら）
+    let lut_from_file: Option<Lut> = if !use_state_lut {
+        if let Some(p) = &lut_path {
+            match std::fs::read_to_string(p) {
+                Ok(t) => match parse_cube(&t) {
+                    Ok(l) => Some(l),
+                    Err(e) => {
+                        log_append(&format!("update_preview: lut parse failed: {}", e));
+                        None
+                    }
+                },
                 Err(e) => {
-                    log_append(&format!("update_preview: lut parse failed: {}", e));
+                    log_append(&format!("update_preview: lut read failed '{}': {}", p, e));
                     None
                 }
-            },
-            Err(e) => {
-                log_append(&format!("update_preview: lut read failed '{}': {}", p, e));
-                None
             }
+        } else {
+            None
         }
     } else {
         None
@@ -138,29 +168,45 @@ fn update_preview(
     let mut s = state.lock();
     let img = match s.image.as_ref() {
         Some(img) => img,
-        None => return Err("image not loaded".into()),
+        None => {
+            let msg = "update_preview: image not loaded; call open_exr first";
+            log_append(msg);
+            return Err(msg.into());
+        }
     };
-    let state_lut = if use_state_lut { s.lut.as_ref() } else { None };
-    let preview = generate_preview(img, max_size, exposure, gamma, state_lut, file_lut.as_ref());
+    let lut_ref = if use_state_lut { s.lut.as_ref() } else { lut_from_file.as_ref() };
+    let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
+    let preview = generate_preview(img, max_size, exposure, gamma, lut_ref, pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
-        .ok_or_else(|| "invalid image".to_string())?;
+        .ok_or_else(|| {
+            let msg = "update_preview: invalid preview buffer";
+            log_append(msg);
+            msg.to_string()
+        })?;
     let mut buf: Vec<u8> = Vec::new();
     image::DynamicImage::ImageRgba8(png)
-        .write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageOutputFormat::Png,
-        )
-        .map_err(|e| e.to_string())?;
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageOutputFormat::Png)
+        .map_err(|e| {
+            let msg = format!("update_preview: encode failed: {}", e);
+            log_append(&msg);
+            msg
+        })?;
     let b64 = BASE64.encode(&buf);
 
     s.scale = (img.width as f32 / preview.width as f32)
         .max(img.height as f32 / preview.height as f32)
         .max(1.0);
     s.preview = Some(preview);
+    if !use_state_lut {
+        if let Some(l) = lut_from_file {
+            s.lut = Some(l);
+        }
+    }
     Ok((
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
+        stats,
     ))
 }
 
@@ -216,6 +262,12 @@ fn clear_log() -> Result<(), String> {
     std::fs::write(log_path(), "").map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn cancel_open(prog: tauri::State<Arc<OpenProgress>>) -> Result<(), String> {
+    prog.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 fn log_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("exrtool-gui.log")
 }
@@ -233,6 +285,84 @@ fn log_append(msg: &str) {
     {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+fn generate_preview_progress(
+    img: &LoadedExr,
+    max_size: u32,
+    exposure: f32,
+    gamma: f32,
+    lut: Option<&Lut>,
+    window: &tauri::Window,
+    prog: &OpenProgress,
+) -> Result<PreviewImage, String> {
+    let (w, h) = (img.width as u32, img.height as u32);
+    let scale = if w <= max_size && h <= max_size {
+        1.0
+    } else {
+        (max_size as f32 / w as f32).min(max_size as f32 / h as f32)
+    };
+    let out_w = (w as f32 * scale).round().max(1.0) as u32;
+    let out_h = (h as f32 * scale).round().max(1.0) as u32;
+
+    let mut rgba8 = vec![0u8; (out_w * out_h * 4) as usize];
+    let _ = window.emit("open-progress", 0.0);
+
+    for oy in 0..out_h {
+        for ox in 0..out_w {
+            let sx = (ox as f32) / scale;
+            let sy = (oy as f32) / scale;
+            let x0 = sx.floor().clamp(0.0, (w - 1) as f32) as i32;
+            let y0 = sy.floor().clamp(0.0, (h - 1) as f32) as i32;
+            let x1 = (x0 + 1).min(w as i32 - 1);
+            let y1 = (y0 + 1).min(h as i32 - 1);
+            let tx = (sx - x0 as f32).clamp(0.0, 1.0);
+            let ty = (sy - y0 as f32).clamp(0.0, 1.0);
+
+            let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
+                let idx = (y as usize * img.width + x as usize) * 4;
+                (
+                    img.rgba_f32[idx+0],
+                    img.rgba_f32[idx+1],
+                    img.rgba_f32[idx+2],
+                    img.rgba_f32[idx+3]
+                )
+            };
+            let (r00,g00,b00,a00) = sample(x0,y0);
+            let (r10,g10,b10,a10) = sample(x1,y0);
+            let (r01,g01,b01,a01) = sample(x0,y1);
+            let (r11,g11,b11,a11) = sample(x1,y1);
+            let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
+            let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
+            let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
+            let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
+            let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
+
+            let m = 2.0f32.powf(exposure);
+            r *= m; g *= m; b *= m;
+
+            if let Some(l) = lut {
+                let rgb = l.apply([r, g, b]);
+                r = rgb[0]; g = rgb[1]; b = rgb[2];
+            }
+
+            let rgb = apply_gamma([r, g, b], gamma);
+            let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+
+            let di = (oy * out_w + ox) as usize * 4;
+            rgba8[di + 0] = r8;
+            rgba8[di + 1] = g8;
+            rgba8[di + 2] = b8;
+            rgba8[di + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
+        }
+        let pct = ((oy + 1) as f64 / out_h as f64) * 100.0;
+        let _ = window.emit("open-progress", pct);
+        if prog.cancel.load(Ordering::SeqCst) {
+            return Err("cancelled".to_string());
+        }
+    }
+
+    Ok(PreviewImage { width: out_w, height: out_h, rgba8 })
 }
 
 #[tauri::command]
@@ -264,8 +394,9 @@ fn set_lut_3d(
     dst_space: String,
     dst_tf: String,
     size: u32,
+    clip_mode: String,
 ) -> Result<(), String> {
-    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn, ClipMode};
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
             "srgb" | "rec709" => Ok(Primaries::SrgbD65),
@@ -284,12 +415,20 @@ fn set_lut_3d(
             _ => Err(format!("unknown transfer: {}", s)),
         }
     };
+    let parse_clip = |s: &str| -> Result<ClipMode, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "clip" => Ok(ClipMode::Clip),
+            "noclip" | "none" => Ok(ClipMode::NoClip),
+            _ => Err(format!("unknown clip mode: {}", s)),
+        }
+    };
     let text = make_3d_lut_cube(
         parse_space(&src_space)?,
         parse_tf(&src_tf)?,
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
+        1024,
     );
     let lut = parse_cube(&text).map_err(|e| e.to_string())?;
     state.lock().lut = Some(lut);
@@ -354,9 +493,22 @@ fn make_lut3d(
     std::fs::write(out_path, text).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn lut_presets(state: tauri::State<PresetState>) -> Result<Vec<LutPreset>, String> {
+    Ok(state.presets.clone())
+}
+
 fn main() {
+    let preset_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../config/luts.presets.json");
+    let presets: Vec<LutPreset> = std::fs::read_to_string(&preset_path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(AppState::default())))
+        .manage(PresetState { presets })
         .invoke_handler(tauri::generate_handler![
             open_exr,
             update_preview,
@@ -364,9 +516,11 @@ fn main() {
             export_preview_png,
             read_log,
             clear_log,
+            cancel_open,
             set_lut_1d,
             set_lut_3d,
-            clear_lut
+            clear_lut,
+            lut_presets
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

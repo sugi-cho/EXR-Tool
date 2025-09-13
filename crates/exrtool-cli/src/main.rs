@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use exrtool_core::{
-    export_png, generate_preview, load_exr_basic, make_1d_lut, parse_cube, ColorSpace,
-};
+use clap::{Parser, Subcommand, ValueEnum};
+use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace, PreviewQuality};
+use std::path::PathBuf;
 use std::fs;
 use std::path::PathBuf;
 
@@ -10,6 +9,9 @@ use std::path::PathBuf;
 #[command(name = "exrtool")]
 #[command(about = "EXR プレビューとピクセル検査のCLI", long_about = None)]
 struct Cli {
+    /// OCIO config: "aces1.3" or file path
+    #[arg(long)]
+    ocio: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -35,6 +37,9 @@ enum Commands {
         /// .cubeファイル（任意）
         #[arg(long)]
         lut: Option<PathBuf>,
+        /// 高品質リサイズ
+        #[arg(long, value_enum, default_value_t = Quality::Fast)]
+        quality: Quality,
     },
 
     /// 指定座標のリニア値を表示
@@ -82,31 +87,53 @@ enum Commands {
         /// テーブルサイズ（既定: 33）
         #[arg(long, default_value_t = 33)]
         size: usize,
+        /// 1D シェーパーサイズ（0で無効）
+        #[arg(long, default_value_t = 1024)]
+        shaper_size: usize,
         /// 出力パス（.cube）
         #[arg(short, long)]
         out: PathBuf,
     },
+
+    /// ルールファイルに基づき処理を適用
+    Apply {
+        /// ルールファイル(YAML)
+        #[arg(long)]
+        rules: PathBuf,
+        /// 実行内容のみ表示
+        #[arg(long)]
+        dry_run: bool,
+        /// 出力を上書きする際にバックアップ(.bak)を作成
+        #[arg(long)]
+        backup: bool,
+    },
 }
+
+#[derive(Clone, ValueEnum)]
+enum Quality { Fast, High }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(cfg) = &cli.ocio {
+        let path = if cfg == "aces1.3" {
+            PathBuf::from("configs/aces1.3/config.ocio")
+        } else {
+            PathBuf::from(cfg)
+        };
+        match load_ocio_config(&path) {
+            Ok(_) => println!("OCIO config loaded: {}", path.display()),
+            Err(e) => eprintln!("OCIO config load failed: {}", e),
+        }
+    }
     match cli.command {
-        Commands::Preview {
-            input,
-            out,
-            max_size,
-            exposure,
-            gamma,
-            lut,
-        } => {
+        Commands::Preview { input, out, max_size, exposure, gamma, lut, quality } => {
             let img = load_exr_basic(&input)?;
             let lut_obj = if let Some(p) = lut {
                 let txt = fs::read_to_string(p)?;
                 Some(parse_cube(&txt)?)
-            } else {
-                None
-            };
-            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), None);
+            } else { None };
+            let pq = match quality { Quality::Fast => PreviewQuality::Fast, Quality::High => PreviewQuality::High };
+            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
             export_png(&out, &preview)?;
             println!(
                 "w={} h={} => {}",
@@ -150,48 +177,29 @@ fn main() -> Result<()> {
                 size
             );
         }
-        Commands::MakeLut3D {
-            src_space,
-            src_tf,
-            dst_space,
-            dst_tf,
-            size,
-            out,
-        } => {
-            use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
-            let parse_space = |s: &str| -> Result<Primaries> {
-                match s.to_ascii_lowercase().as_str() {
-                    "srgb" | "rec709" => Ok(Primaries::SrgbD65),
-                    "rec2020" | "bt2020" => Ok(Primaries::Rec2020D65),
-                    "acescg" | "ap1" => Ok(Primaries::ACEScgD60),
-                    "aces2065" | "ap0" | "aces" => Ok(Primaries::ACES2065_1D60),
-                    _ => Err(anyhow::anyhow!("unknown space: {}", s)),
-                }
-            };
-            let parse_tf = |s: &str| -> Result<TransferFn> {
-                match s.to_ascii_lowercase().as_str() {
-                    "linear" => Ok(TransferFn::Linear),
-                    "srgb" => Ok(TransferFn::Srgb),
-                    "g24" | "gamma2.4" => Ok(TransferFn::Gamma24),
-                    "g22" | "gamma2.2" => Ok(TransferFn::Gamma22),
-                    _ => Err(anyhow::anyhow!("unknown transfer: {}", s)),
-                }
-            };
-            let sp = parse_space(&src_space)?;
-            let dt = parse_space(&dst_space)?;
-            let st = parse_tf(&src_tf)?;
-            let tt = parse_tf(&dst_tf)?;
-            let text = make_3d_lut_cube(sp, st, dt, tt, size);
+        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, shaper_size, out } => {
+            use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
+            let parse_space = |s:&str| -> Result<Primaries> { match s.to_ascii_lowercase().as_str() {
+                "srgb"|"rec709" => Ok(Primaries::SrgbD65),
+                "rec2020"|"bt2020" => Ok(Primaries::Rec2020D65),
+                "acescg"|"ap1" => Ok(Primaries::ACEScgD60),
+                "aces2065"|"ap0"|"aces" => Ok(Primaries::ACES2065_1D60),
+                _ => Err(anyhow::anyhow!("unknown space: {}", s)) } };
+            let parse_tf = |s:&str| -> Result<TransferFn> { match s.to_ascii_lowercase().as_str() {
+                "linear" => Ok(TransferFn::Linear),
+                "srgb" => Ok(TransferFn::Srgb),
+                "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
+                "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
+                _ => Err(anyhow::anyhow!("unknown transfer: {}", s)) } };
+            let parse_clip = |s:&str| -> Result<ClipMode> { match s.to_ascii_lowercase().as_str() {
+                "clip" => Ok(ClipMode::Clip),
+                "noclip"|"none" => Ok(ClipMode::NoClip),
+                _ => Err(anyhow::anyhow!("unknown clip mode: {}", s)) } };
+            let sp = parse_space(&src_space)?; let dt = parse_space(&dst_space)?;
+            let st = parse_tf(&src_tf)?; let tt = parse_tf(&dst_tf)?;
+            let text = make_3d_lut_cube(sp, st, dt, tt, size, shaper_size);
             fs::write(&out, text)?;
-            println!(
-                "3D LUT saved: {} ({} {} -> {} {}, size={})",
-                out.display(),
-                src_space,
-                src_tf,
-                dst_space,
-                dst_tf,
-                size
-            );
+            println!("3D LUT saved: {} ({} {} -> {} {}, size={} shaper={})", out.display(), src_space, src_tf, dst_space, dst_tf, size, shaper_size);
         }
     }
     Ok(())

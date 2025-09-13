@@ -51,7 +51,7 @@
 - [ ] Display/View/LUTチェインをGUIで編集
 
 8) 配布/CI
-- [ ] GitHub Actions: CLI/GUI のビルド（Win/macOS/Linux）
+- [x] GitHub Actions: CLI/GUI のビルド（Win/macOS/Linux）（担当: cloud-codex / 状態: 完了）
 - [ ] Windows: MSIX/MSI、macOS: notarize、Linux: AppImage
 - [ ] クラッシュ/使用ログ（匿名）オプション
 
