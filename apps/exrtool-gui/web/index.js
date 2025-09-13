@@ -80,6 +80,7 @@
         ctx.drawImage(img, 0, 0);
         info.textContent = `preview: ${w}x${h}`;
         appendLog(`open ok: ${w}x${h}`);
+        drawHistogram(stats);
       };
       img.src = 'data:image/png;base64,' + b64;
     } catch (e) {
@@ -203,6 +204,7 @@
             ctx.clearRect(0, 0, w, h);
             ctx.drawImage(img, 0, 0);
             if (info) info.textContent = `preview: ${w}x${h}`;
+            drawHistogram(stats);
           };
           img.src = 'data:image/png;base64,' + b64;
           showError('');

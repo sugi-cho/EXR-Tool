@@ -118,6 +118,7 @@ async fn open_exr(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
+        stats,
     ))
 }
 
@@ -197,6 +198,7 @@ fn update_preview(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
+        stats,
     ))
 }
 
