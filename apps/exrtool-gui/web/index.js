@@ -86,6 +86,7 @@
     const applyPresetBtn = getEl('apply-preset');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
+    const logConsent = getEl('log-consent');
 
     if (openBtn) openBtn.addEventListener('click', openExr);
 
@@ -201,6 +202,23 @@
     if (clearLutBtn) clearLutBtn.addEventListener('click', async () => {
       try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
     });
+
+    if (logConsent) {
+      try {
+        (async () => {
+          if (!(await ensureTauriReady())) return;
+          const allowed = await invoke('get_log_permission');
+          logConsent.checked = !!allowed;
+        })();
+      } catch (e) { appendLog('設定取得失敗: ' + e); }
+      logConsent.addEventListener('change', async () => {
+        try {
+          if (!(await ensureTauriReady())) return;
+          await invoke('set_log_permission', { allow: logConsent.checked });
+          appendLog('ログ送信 ' + (logConsent.checked ? '許可' : '拒否'));
+        } catch (e) { appendLog('設定変更失敗: ' + e); }
+      });
+    }
 
     // 早期にTauri注入が完了するケース向け
     ensureTauriReady(2000);

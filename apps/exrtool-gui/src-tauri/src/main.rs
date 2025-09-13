@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use exrtool_core::{export_png, generate_preview, parse_cube, LoadedExr, PreviewImage, Lut};
 
 struct AppState {
@@ -17,12 +18,40 @@ struct AppState {
     preview: Option<PreviewImage>,
     scale: f32,            // preview座標→元画像座標への係数 (orig = preview * scale)
     lut: Option<Lut>,      // メモリ内LUT（即時プレビュー用）
+    allow_send: bool,      // ログ送信許可フラグ
 }
 
 impl Default for AppState {
     fn default() -> Self {
-        Self { image: None, preview: None, scale: 1.0, lut: None }
+        Self { image: None, preview: None, scale: 1.0, lut: None, allow_send: false }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct AppConfig {
+    send_logs: bool,
+}
+
+fn config_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.json")
+}
+
+fn load_config() -> AppConfig {
+    match std::fs::read_to_string(config_path()) {
+        Ok(t) => serde_json::from_str(&t).unwrap_or(AppConfig { send_logs: false }),
+        Err(_) => AppConfig { send_logs: false },
+    }
+}
+
+fn save_config(cfg: &AppConfig) -> Result<(), String> {
+    let s = serde_json::to_string(cfg).map_err(|e| e.to_string())?;
+    std::fs::write(config_path(), s).map_err(|e| e.to_string())
+}
+
+fn send_async(msg: String) {
+    std::thread::spawn(move || {
+        log_append(&msg);
+    });
 }
 
 #[tauri::command]
@@ -39,6 +68,10 @@ fn open_exr(
         "open_exr: path='{}' max={} exp={} gamma={} lut={:?}",
         path, max_size, exposure, gamma, lut_path
     ));
+    if state.lock().allow_send {
+        let p = path.clone();
+        send_async(format!("usage: open_exr {}", p));
+    }
     let img = exrtool_core::load_exr_basic(&pathbuf)
         .map_err(|e| {
             log_append(&format!("open_exr: load failed: {}", e));
@@ -295,9 +328,40 @@ fn make_lut3d(src_space: String, src_tf: String, dst_space: String, dst_tf: Stri
     std::fs::write(out_path, text).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_log_permission(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<bool, String> {
+    Ok(state.lock().allow_send)
+}
+
+#[tauri::command]
+fn set_log_permission(
+    state: tauri::State<Arc<Mutex<AppState>>>,
+    allow: bool,
+) -> Result<(), String> {
+    {
+        let mut s = state.lock();
+        s.allow_send = allow;
+    }
+    save_config(&AppConfig { send_logs: allow })?;
+    Ok(())
+}
+
 fn main() {
+    let cfg = load_config();
+    let state = Arc::new(Mutex::new(AppState {
+        allow_send: cfg.send_logs,
+        ..Default::default()
+    }));
+    {
+        let st = state.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            if st.lock().allow_send {
+                send_async(format!("panic: {}", info));
+            }
+        }));
+    }
     tauri::Builder::default()
-        .manage(Arc::new(Mutex::new(AppState::default())))
+        .manage(state)
         .invoke_handler(tauri::generate_handler![
             open_exr,
             update_preview,
@@ -307,7 +371,9 @@ fn main() {
             clear_log,
             set_lut_1d,
             set_lut_3d,
-            clear_lut
+            clear_lut,
+            get_log_permission,
+            set_log_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
