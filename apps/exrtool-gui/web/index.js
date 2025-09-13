@@ -39,6 +39,7 @@
     const maxEl = getEl('max');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
+    const hqEl = getEl('hq');
     const cv = getEl('cv');
     const info = getEl('info');
     if (!pathEl || !cv || !info) return;
@@ -53,7 +54,8 @@
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: parseFloat(expEl?.value ?? '0'),
         gamma: parseFloat(gammaEl?.value ?? '2.2'),
-        lutPath
+        lutPath,
+        highQuality: !!(hqEl?.checked)
       });
       const img = new Image();
       img.onload = () => {
@@ -79,6 +81,7 @@
     const pathEl = getEl('path');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
+    const hqEl = getEl('hq');
     const lutSrc = getEl('lut-src');
     const lutDst = getEl('lut-dst');
     const lutSize = getEl('lut-size');
@@ -142,6 +145,7 @@
             gamma: parseFloat(gammaEl?.value ?? '2.2'),
             lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
             useStateLut: !!(useStateLut?.checked),
+            highQuality: !!(hqEl?.checked),
           });
           const img = new Image();
           const info = getEl('info');
@@ -159,6 +163,7 @@
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
     if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
     if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
+    if (hqEl) hqEl.addEventListener('change', scheduleUpdate);
 
     if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
       try {

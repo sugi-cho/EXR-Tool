@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace};
+use clap::{Parser, Subcommand, ValueEnum};
+use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace, PreviewQuality};
 use std::path::PathBuf;
 use std::fs;
 
@@ -33,6 +33,9 @@ enum Commands {
         /// .cubeファイル（任意）
         #[arg(long)]
         lut: Option<PathBuf>,
+        /// 高品質リサイズ
+        #[arg(long, value_enum, default_value_t = Quality::Fast)]
+        quality: Quality,
     },
 
     /// 指定座標のリニア値を表示
@@ -86,16 +89,20 @@ enum Commands {
     },
 }
 
+#[derive(Clone, ValueEnum)]
+enum Quality { Fast, High }
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Preview { input, out, max_size, exposure, gamma, lut } => {
+        Commands::Preview { input, out, max_size, exposure, gamma, lut, quality } => {
             let img = load_exr_basic(&input)?;
-            let lut_obj = if let Some(p) = lut { 
-                let txt = fs::read_to_string(p)?; 
+            let lut_obj = if let Some(p) = lut {
+                let txt = fs::read_to_string(p)?;
                 Some(parse_cube(&txt)?)
             } else { None };
-            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref());
+            let pq = match quality { Quality::Fast => PreviewQuality::Fast, Quality::High => PreviewQuality::High };
+            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
             export_png(&out, &preview)?;
             println!("w={} h={} => {}", preview.width, preview.height, out.display());
         }
