@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path};
+use std::fs;
 use nalgebra::{Matrix3, Vector3};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +39,19 @@ impl LoadedExr {
             a: self.rgba_f32[idx + 3],
         })
     }
+}
+
+// ---- OCIO Config Loading ----
+#[derive(Debug, Clone)]
+pub struct OcioConfig {
+    pub path: String,
+    pub text: String,
+}
+
+pub fn load_ocio_config(path: &Path) -> Result<OcioConfig> {
+    let text = fs::read_to_string(path)
+        .map_err(|e| anyhow!("failed to read OCIO config {}: {}", path.display(), e))?;
+    Ok(OcioConfig { path: path.to_string_lossy().into_owned(), text })
 }
 
 // ---- EXR Loading (via image crate) ----

@@ -36,6 +36,7 @@
   async function openExr() {
     const pathEl = getEl('path');
     const lutEl = getEl('lut');
+    const ocioEl = getEl('ocio');
     const maxEl = getEl('max');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
@@ -46,6 +47,7 @@
 
     const path = pathEl.value.trim();
     const lutPath = lutEl ? (lutEl.value.trim() || null) : null;
+    const ocioConfig = ocioEl ? (ocioEl.value.trim() || null) : null;
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
       const [w, h, b64] = await invoke('open_exr', {
@@ -53,7 +55,8 @@
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: parseFloat(expEl?.value ?? '0'),
         gamma: parseFloat(gammaEl?.value ?? '2.2'),
-        lutPath
+        lutPath,
+        ocioConfig
       });
       const img = new Image();
       img.onload = () => {

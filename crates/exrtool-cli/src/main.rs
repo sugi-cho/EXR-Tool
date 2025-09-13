@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace};
+use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace, load_ocio_config};
 use std::path::PathBuf;
 use std::fs;
 
@@ -8,6 +8,9 @@ use std::fs;
 #[command(name = "exrtool")] 
 #[command(about = "EXR プレビューとピクセル検査のCLI", long_about = None)]
 struct Cli {
+    /// OCIO config: "aces1.3" or file path
+    #[arg(long)]
+    ocio: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -88,6 +91,17 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(cfg) = &cli.ocio {
+        let path = if cfg == "aces1.3" {
+            PathBuf::from("configs/aces1.3/config.ocio")
+        } else {
+            PathBuf::from(cfg)
+        };
+        match load_ocio_config(&path) {
+            Ok(_) => println!("OCIO config loaded: {}", path.display()),
+            Err(e) => eprintln!("OCIO config load failed: {}", e),
+        }
+    }
     match cli.command {
         Commands::Preview { input, out, max_size, exposure, gamma, lut } => {
             let img = load_exr_basic(&input)?;

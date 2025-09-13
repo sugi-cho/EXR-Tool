@@ -10,18 +10,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use exrtool_core::{export_png, generate_preview, parse_cube, LoadedExr, PreviewImage, Lut};
+use exrtool_core::{export_png, generate_preview, parse_cube, LoadedExr, PreviewImage, Lut, OcioConfig, load_ocio_config};
 
 struct AppState {
     image: Option<LoadedExr>,
     preview: Option<PreviewImage>,
     scale: f32,            // preview座標→元画像座標への係数 (orig = preview * scale)
     lut: Option<Lut>,      // メモリ内LUT（即時プレビュー用）
+    ocio: Option<OcioConfig>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
-        Self { image: None, preview: None, scale: 1.0, lut: None }
+        Self { image: None, preview: None, scale: 1.0, lut: None, ocio: None }
     }
 }
 
@@ -33,11 +34,12 @@ fn open_exr(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
+    ocio_config: Option<String>,
 ) -> Result<(u32, u32, String), String> {
     let pathbuf = PathBuf::from(&path);
     log_append(&format!(
-        "open_exr: path='{}' max={} exp={} gamma={} lut={:?}",
-        path, max_size, exposure, gamma, lut_path
+        "open_exr: path='{}' max={} exp={} gamma={} lut={:?} ocio={:?}",
+        path, max_size, exposure, gamma, lut_path, ocio_config
     ));
     let img = exrtool_core::load_exr_basic(&pathbuf)
         .map_err(|e| {
@@ -51,6 +53,18 @@ fn open_exr(
                 Err(e) => log_append(&format!("open_exr: lut parse failed: {}", e)),
             },
             Err(e) => log_append(&format!("open_exr: lut read failed '{}': {}", p, e)),
+        }
+    }
+
+    if let Some(cfg) = ocio_config {
+        let cfg_path = if cfg == "aces1.3" {
+            PathBuf::from("configs/aces1.3/config.ocio")
+        } else {
+            PathBuf::from(&cfg)
+        };
+        match load_ocio_config(&cfg_path) {
+            Ok(c) => state.lock().ocio = Some(c),
+            Err(e) => log_append(&format!("open_exr: ocio load failed '{}': {}", cfg_path.display(), e)),
         }
     }
 
