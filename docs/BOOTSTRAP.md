@@ -44,3 +44,12 @@ cargo run -p exrtool-cli -- preview "C:\\path\\to\\input.exr" -o preview.png --m
 - WebView2 runtime が無い → `winget install -e --id Microsoft.EdgeWebView2Runtime`
 - `cargo tauri dev -p ...` は不可 → `apps/exrtool-gui/src-tauri` に移動して `cargo tauri dev`
 
+## オプション機能（feature）
+
+- メタデータ（`use_exr_crate`）
+  - 有効化例: `cargo build -p exrtool-core --features use_exr_crate`
+- OpenColorIO 連携（実験的 `use_ocio`）
+  - 前提: OpenColorIO 開発パッケージ、LLVM/Clang（libclang）
+  - Windows の場合は vcpkg/conda 等で OCIO を導入し、`LIBCLANG_PATH` を設定
+  - 有効化例: `cargo build -p exrtool-core --features use_ocio`
+  - feature 無効時は build.rs が自動的にスキップされます
