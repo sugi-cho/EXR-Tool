@@ -13,6 +13,8 @@ pub mod metadata;
 #[cfg(feature = "use_exr_crate")]
 mod save;
 
+pub mod ocio;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
     pub width: u32,
