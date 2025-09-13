@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ExrTool Preview</title>
     <link rel="stylesheet" href="style.css" />
+    <style>
+      #attr-table { border-collapse: collapse; }
+      #attr-table th, #attr-table td { border: 1px solid #ccc; padding: 2px 4px; }
+      #attr-table tr.added { background: #e0ffe0; }
+      #attr-table tr.modified { background: #fff4c2; }
+      #attr-table tr.deleted { background: #ffd6d6; text-decoration: line-through; }
+    </style>
   </head>
   <body>
     <header>
@@ -37,6 +44,14 @@
       <div>
         <div class="readout" id="readout">x: -, y: -, linear: -</div>
         <pre id="logbox" class="logbox"></pre>
+        <div id="attrs">
+          <h2>Attributes</h2>
+          <button id="add-attr">属性追加</button>
+          <table id="attr-table">
+            <thead><tr><th>Name</th><th>Value</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </main>
     <script src="index.js"></script>
