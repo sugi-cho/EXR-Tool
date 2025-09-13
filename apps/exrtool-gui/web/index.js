@@ -128,18 +128,39 @@
       } catch (e) { alert('保存に失敗: ' + e); }
     });
 
-    if (cv) cv.addEventListener('mousemove', async (ev) => {
-      if (imgW === 0) return;
-      const rect = cv.getBoundingClientRect();
-      const x = Math.floor((ev.clientX - rect.left));
-      const y = Math.floor((ev.clientY - rect.top));
-      try {
-        if (!(invoke || await ensureTauriReady())) return;
-        const [r,g,b,a] = await invoke('probe_pixel', { px: x, py: y });
-        const readout = getEl('readout');
-        if (readout) readout.textContent = `x:${x}, y:${y}  linear: R ${r.toFixed(6)}  G ${g.toFixed(6)}  B ${b.toFixed(6)}  A ${a.toFixed(6)}`;
-      } catch (_) { /* ignore */ }
-    });
+    if (cv) {
+      cv.addEventListener('mousemove', async (ev) => {
+        if (imgW === 0 || pipetteFixed) return;
+        const rect = cv.getBoundingClientRect();
+        const x = Math.floor((ev.clientX - rect.left));
+        const y = Math.floor((ev.clientY - rect.top));
+        try {
+          if (!(invoke || await ensureTauriReady())) return;
+          const [r,g,b,a] = await invoke('probe_pixel', { px: x, py: y });
+          const readout = getEl('readout');
+          if (readout) readout.textContent = `x:${x}, y:${y}  linear: R ${r.toFixed(6)}  G ${g.toFixed(6)}  B ${b.toFixed(6)}  A ${a.toFixed(6)}`;
+        } catch (_) { /* ignore */ }
+      });
+      cv.addEventListener('click', async (ev) => {
+        if (imgW === 0) return;
+        const rect = cv.getBoundingClientRect();
+        const x = Math.floor((ev.clientX - rect.left));
+        const y = Math.floor((ev.clientY - rect.top));
+        if (!pipetteFixed) {
+          try {
+            if (!(invoke || await ensureTauriReady())) return;
+            const [r,g,b,a] = await invoke('probe_pixel', { px: x, py: y });
+            const text = `x:${x}, y:${y}  linear: R ${r.toFixed(6)}  G ${g.toFixed(6)}  B ${b.toFixed(6)}  A ${a.toFixed(6)}`;
+            const readout = getEl('readout');
+            if (readout) readout.textContent = text;
+            try { await navigator.clipboard.writeText(text); } catch (_) {}
+            pipetteFixed = true;
+          } catch (_) { /* ignore */ }
+        } else {
+          pipetteFixed = false;
+        }
+      });
+    }
 
     // Exposure/Gamma live update (debounced)
     let timer = null;
