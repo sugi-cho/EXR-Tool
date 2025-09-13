@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use nalgebra::{Matrix3, Vector3};
 
+#[cfg(feature = "use_exr_crate")]
+pub mod metadata;
+#[cfg(feature = "use_exr_crate")]
+mod save;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
     pub width: u32,
