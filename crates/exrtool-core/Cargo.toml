@@ -18,3 +18,8 @@ nalgebra = { version = "0.32", default-features = false, features = ["std"] }
 
 # optional
 exr = { version = "1.72", optional = true }
+
+[build-dependencies]
+bindgen = "0.69"
+cc = "1.0"
+pkg-config = "0.3"

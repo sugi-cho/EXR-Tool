@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use nalgebra::{Matrix3, Vector3};
 
+pub mod ocio;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
     pub width: u32,
@@ -409,4 +411,15 @@ pub fn make_3d_lut_cube(
         out.push_str(&format!("{:.10} {:.10} {:.10}\n", rd, gd, bd));
     }}}
     out
+}
+
+/// Apply a color space conversion using an OCIO configuration.
+///
+/// `config_path` points to an `.ocio` file, `src` and `dst` are color
+/// space names defined in the config. `rgb` is modified in place.
+pub fn ocio_apply_rgb(config_path: &Path, src: &str, dst: &str, rgb: &mut [f32;3]) -> Result<()> {
+    let cfg = ocio::Config::from_file(config_path)?;
+    let proc = cfg.processor(src, dst)?;
+    proc.apply_rgb(rgb);
+    Ok(())
 }
