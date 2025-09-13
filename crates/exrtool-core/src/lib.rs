@@ -295,6 +295,14 @@ pub enum Primaries {
 #[derive(Debug, Clone, Copy)]
 pub enum TransferFn { Linear, Srgb, Gamma24, Gamma22 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ClipMode {
+    /// Clamp values to [0,1]
+    Clip,
+    /// Leave values as-is without clamping
+    NoClip,
+}
+
 fn tf_encode(v: f64, tf: TransferFn) -> f64 {
     match tf {
         TransferFn::Linear => v,
@@ -386,6 +394,7 @@ pub fn make_3d_lut_cube(
     dst_prim: Primaries,
     dst_tf: TransferFn,
     size: usize,
+    clip: ClipMode,
 ) -> String {
     let m = rgb_to_rgb_matrix(src_prim, dst_prim);
     let mut out = String::new();
@@ -403,9 +412,14 @@ pub fn make_3d_lut_cube(
         let bs = tf_decode(bf, src_tf);
         let v = Vector3::new(rs, gs, bs);
         let v_lin_dst = m * v; // gamut conversion in linear
-        let mut rd = tf_encode(v_lin_dst.x, dst_tf).clamp(0.0, 1.0);
-        let mut gd = tf_encode(v_lin_dst.y, dst_tf).clamp(0.0, 1.0);
-        let mut bd = tf_encode(v_lin_dst.z, dst_tf).clamp(0.0, 1.0);
+        let mut rd = tf_encode(v_lin_dst.x, dst_tf);
+        let mut gd = tf_encode(v_lin_dst.y, dst_tf);
+        let mut bd = tf_encode(v_lin_dst.z, dst_tf);
+        if let ClipMode::Clip = clip {
+            rd = rd.clamp(0.0, 1.0);
+            gd = gd.clamp(0.0, 1.0);
+            bd = bd.clamp(0.0, 1.0);
+        }
         out.push_str(&format!("{:.10} {:.10} {:.10}\n", rd, gd, bd));
     }}}
     out

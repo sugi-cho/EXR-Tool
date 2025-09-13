@@ -26,6 +26,7 @@
         <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>→ 先<select id="lut-dst"><option>srgb</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
+        <label>Clip<select id="lut-clip"><option value="clip">clip</option><option value="noclip">noclip</option></select></label>
         <button id="make-lut">LUT生成(.cube)</button>
         <button id="apply-preset">Preset適用(メモリ)</button>
         <button id="clear-lut">LUT解除</button>

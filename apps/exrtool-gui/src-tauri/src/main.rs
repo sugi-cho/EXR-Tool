@@ -230,8 +230,9 @@ fn set_lut_3d(
     dst_space: String,
     dst_tf: String,
     size: u32,
+    clip_mode: String,
 ) -> Result<(), String> {
-    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn, ClipMode};
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
             "srgb" | "rec709" => Ok(Primaries::SrgbD65),
@@ -250,12 +251,20 @@ fn set_lut_3d(
             _ => Err(format!("unknown transfer: {}", s)),
         }
     };
+    let parse_clip = |s: &str| -> Result<ClipMode, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "clip" => Ok(ClipMode::Clip),
+            "noclip" | "none" => Ok(ClipMode::NoClip),
+            _ => Err(format!("unknown clip mode: {}", s)),
+        }
+    };
     let text = make_3d_lut_cube(
         parse_space(&src_space)?,
         parse_tf(&src_tf)?,
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
+        parse_clip(&clip_mode)?,
     );
     let lut = parse_cube(&text).map_err(|e| e.to_string())?;
     state.lock().lut = Some(lut);
@@ -277,8 +286,8 @@ fn make_lut(src: String, dst: String, size: u32, out_path: String) -> Result<(),
 }
 
 #[tauri::command]
-fn make_lut3d(src_space: String, src_tf: String, dst_space: String, dst_tf: String, size: u32, out_path: String) -> Result<(), String> {
-    use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
+fn make_lut3d(src_space: String, src_tf: String, dst_space: String, dst_tf: String, size: u32, clip_mode: String, out_path: String) -> Result<(), String> {
+    use exrtool_core::{Primaries, TransferFn, ClipMode, make_3d_lut_cube};
     let parse_space = |s:&str| -> Result<Primaries, String> { match s.to_ascii_lowercase().as_str() {
         "srgb"|"rec709" => Ok(Primaries::SrgbD65),
         "rec2020"|"bt2020" => Ok(Primaries::Rec2020D65),
@@ -291,7 +300,18 @@ fn make_lut3d(src_space: String, src_tf: String, dst_space: String, dst_tf: Stri
         "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
         "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
         _ => Err(format!("unknown transfer: {}", s)) } };
-    let text = make_3d_lut_cube(parse_space(&src_space)?, parse_tf(&src_tf)?, parse_space(&dst_space)?, parse_tf(&dst_tf)?, size as usize);
+    let parse_clip = |s:&str| -> Result<ClipMode, String> { match s.to_ascii_lowercase().as_str() {
+        "clip" => Ok(ClipMode::Clip),
+        "noclip"|"none" => Ok(ClipMode::NoClip),
+        _ => Err(format!("unknown clip mode: {}", s)) } };
+    let text = make_3d_lut_cube(
+        parse_space(&src_space)?,
+        parse_tf(&src_tf)?,
+        parse_space(&dst_space)?,
+        parse_tf(&dst_tf)?,
+        size as usize,
+        parse_clip(&clip_mode)?,
+    );
     std::fs::write(out_path, text).map_err(|e| e.to_string())
 }
 
