@@ -83,6 +83,7 @@
         drawHistogram(stats);
       };
       img.src = 'data:image/png;base64,' + b64;
+      await loadMetadata(path);
     } catch (e) {
       if (String(e).includes('cancelled')) {
         appendLog('読み込みキャンセル');
@@ -94,6 +95,41 @@
       if (unlisten) unlisten();
       cancelBtn.remove();
       progEl.remove();
+    }
+  }
+
+  async function loadMetadata(path) {
+    if (!attrTable) return;
+    const tbody = attrTable.querySelector('tbody');
+    if (!tbody) return;
+    try {
+      if (!(await ensureTauriReady())) return;
+      const res = await invoke('read_metadata', { path });
+      const entries = Array.isArray(res) ? res : Object.entries(res);
+      originalAttrs = new Map(entries.map(([k, v]) => [String(k), String(v)]));
+      tbody.innerHTML = '';
+      for (const [name, value] of originalAttrs) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="name" contenteditable="true"></td><td class="value" contenteditable="true"></td><td><button class="del">削除</button></td>`;
+        tr.querySelector('.name').textContent = name;
+        tr.querySelector('.value').textContent = value;
+        tr.dataset.originalName = name;
+        tr.dataset.originalValue = value;
+        tbody.appendChild(tr);
+      }
+    } catch (e) { appendLog('metadata読み込み失敗: ' + e); }
+  }
+
+  function markDiff(tr) {
+    if (tr.classList.contains('added')) return;
+    const name = tr.querySelector('.name')?.textContent || '';
+    const value = tr.querySelector('.value')?.textContent || '';
+    const on = tr.dataset.originalName || '';
+    const ov = tr.dataset.originalValue || '';
+    if (name !== on || value !== ov) {
+      tr.classList.add('modified');
+    } else {
+      tr.classList.remove('modified');
     }
   }
 
@@ -114,6 +150,8 @@
     const applyPresetBtn = getEl('apply-preset');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
+    const addAttrBtn = getEl('add-attr');
+    attrTable = getEl('attr-table');
 
     useStateLutEnabled = !!useStateLut?.checked;
 
@@ -132,6 +170,36 @@
         }
       } catch (e) { appendLog('ファイルダイアログ失敗: ' + e); }
     });
+
+    if (addAttrBtn) addAttrBtn.addEventListener('click', () => {
+      const tbody = attrTable?.querySelector('tbody');
+      if (!tbody) return;
+      const tr = document.createElement('tr');
+      tr.classList.add('added');
+      tr.innerHTML = `<td class="name" contenteditable="true"></td><td class="value" contenteditable="true"></td><td><button class="del">削除</button></td>`;
+      tbody.appendChild(tr);
+    });
+
+    if (attrTable) {
+      attrTable.addEventListener('input', (e) => {
+        const tr = e.target.closest('tr');
+        if (!tr) return;
+        if (tr.classList.contains('deleted')) tr.classList.remove('deleted');
+        markDiff(tr);
+      });
+      attrTable.addEventListener('click', (e) => {
+        if (e.target.classList.contains('del')) {
+          const tr = e.target.closest('tr');
+          if (!tr) return;
+          if (tr.classList.contains('added')) {
+            tr.remove();
+          } else {
+            tr.classList.toggle('deleted');
+            if (tr.classList.contains('deleted')) tr.classList.remove('modified');
+          }
+        }
+      });
+    }
 
     if (saveBtn) saveBtn.addEventListener('click', async () => {
       const out = prompt('保存するPNGパスを入力:', 'preview.png');
