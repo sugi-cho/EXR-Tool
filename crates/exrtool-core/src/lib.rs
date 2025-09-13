@@ -55,12 +55,16 @@ pub fn load_exr_basic(path: &Path) -> Result<LoadedExr> {
 }
 
 // ---- Preview Generation ----
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum PreviewQuality { Fast, High }
+
 pub fn generate_preview(
     img: &LoadedExr,
     max_size: u32,
     exposure: f32,
     gamma: f32,
     lut: Option<&Lut>,
+    quality: PreviewQuality,
 ) -> PreviewImage {
     let (w, h) = (img.width as u32, img.height as u32);
     let scale = if w <= max_size && h <= max_size {
@@ -73,54 +77,89 @@ pub fn generate_preview(
 
     let mut rgba8 = vec![0u8; (out_w * out_h * 4) as usize];
 
-    for oy in 0..out_h {
-        for ox in 0..out_w {
-            // bilinear sampling
-            let sx = (ox as f32) / scale;
-            let sy = (oy as f32) / scale;
-            let x0 = sx.floor().clamp(0.0, (w - 1) as f32) as i32;
-            let y0 = sy.floor().clamp(0.0, (h - 1) as f32) as i32;
-            let x1 = (x0 + 1).min(w as i32 - 1);
-            let y1 = (y0 + 1).min(h as i32 - 1);
-            let tx = (sx - x0 as f32).clamp(0.0, 1.0);
-            let ty = (sy - y0 as f32).clamp(0.0, 1.0);
+    match quality {
+        PreviewQuality::Fast => {
+            for oy in 0..out_h {
+                for ox in 0..out_w {
+                    // bilinear sampling
+                    let sx = (ox as f32) / scale;
+                    let sy = (oy as f32) / scale;
+                    let x0 = sx.floor().clamp(0.0, (w - 1) as f32) as i32;
+                    let y0 = sy.floor().clamp(0.0, (h - 1) as f32) as i32;
+                    let x1 = (x0 + 1).min(w as i32 - 1);
+                    let y1 = (y0 + 1).min(h as i32 - 1);
+                    let tx = (sx - x0 as f32).clamp(0.0, 1.0);
+                    let ty = (sy - y0 as f32).clamp(0.0, 1.0);
 
-            let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
-                let idx = (y as usize * img.width + x as usize) * 4;
-                (
-                    img.rgba_f32[idx+0],
-                    img.rgba_f32[idx+1],
-                    img.rgba_f32[idx+2],
-                    img.rgba_f32[idx+3]
-                )
-            };
-            let (r00,g00,b00,a00) = sample(x0,y0);
-            let (r10,g10,b10,a10) = sample(x1,y0);
-            let (r01,g01,b01,a01) = sample(x0,y1);
-            let (r11,g11,b11,a11) = sample(x1,y1);
-            let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
-            let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
-            let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
-            let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
-            let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
+                    let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
+                        let idx = (y as usize * img.width + x as usize) * 4;
+                        (
+                            img.rgba_f32[idx+0],
+                            img.rgba_f32[idx+1],
+                            img.rgba_f32[idx+2],
+                            img.rgba_f32[idx+3]
+                        )
+                    };
+                    let (r00,g00,b00,a00) = sample(x0,y0);
+                    let (r10,g10,b10,a10) = sample(x1,y0);
+                    let (r01,g01,b01,a01) = sample(x0,y1);
+                    let (r11,g11,b11,a11) = sample(x1,y1);
+                    let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
+                    let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
+                    let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
+                    let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
+                    let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
 
-            // exposure in stops (2^exposure)
-            let m = 2.0f32.powf(exposure);
-            r *= m; g *= m; b *= m;
+                    // exposure in stops (2^exposure)
+                    let m = 2.0f32.powf(exposure);
+                    r *= m; g *= m; b *= m;
 
-            if let Some(l) = lut {
-                let rgb = l.apply([r, g, b]);
-                r = rgb[0]; g = rgb[1]; b = rgb[2];
+                    if let Some(l) = lut {
+                        let rgb = l.apply([r, g, b]);
+                        r = rgb[0]; g = rgb[1]; b = rgb[2];
+                    }
+
+                    let rgb = apply_gamma([r, g, b], gamma);
+                    let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+
+                    let di = (oy * out_w + ox) as usize * 4;
+                    rgba8[di + 0] = r8;
+                    rgba8[di + 1] = g8;
+                    rgba8[di + 2] = b8;
+                    rgba8[di + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
+                }
             }
+        }
+        PreviewQuality::High => {
+            let src = image::ImageBuffer::<image::Rgba<f32>, Vec<f32>>::from_raw(w, h, img.rgba_f32.clone())
+                .expect("invalid rgba buffer");
+            let resized = image::imageops::resize(&src, out_w, out_h, FilterType::Lanczos3);
+            let data = resized.into_vec();
+            for oy in 0..out_h {
+                for ox in 0..out_w {
+                    let idx = (oy * out_w + ox) as usize * 4;
+                    let mut r = data[idx + 0];
+                    let mut g = data[idx + 1];
+                    let mut b = data[idx + 2];
+                    let a = data[idx + 3];
 
-            let rgb = apply_gamma([r, g, b], gamma);
-            let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+                    let m = 2.0f32.powf(exposure);
+                    r *= m; g *= m; b *= m;
 
-            let di = (oy * out_w + ox) as usize * 4;
-            rgba8[di + 0] = r8;
-            rgba8[di + 1] = g8;
-            rgba8[di + 2] = b8;
-            rgba8[di + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    if let Some(l) = lut {
+                        let rgb = l.apply([r, g, b]);
+                        r = rgb[0]; g = rgb[1]; b = rgb[2];
+                    }
+
+                    let rgb = apply_gamma([r, g, b], gamma);
+                    let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+
+                    rgba8[idx + 0] = r8;
+                    rgba8[idx + 1] = g8;
+                    rgba8[idx + 2] = b8;
+                    rgba8[idx + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
+                }
+            }
         }
     }
 

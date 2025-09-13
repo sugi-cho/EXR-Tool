@@ -51,6 +51,7 @@
     const maxEl = getEl('max');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
+    const hqEl = getEl('hq');
     const cv = getEl('cv');
     const info = getEl('info');
     if (!pathEl || !cv || !info) return;
@@ -68,7 +69,8 @@
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: parseFloat(expEl?.value ?? '0'),
         gamma: parseFloat(gammaEl?.value ?? '2.2'),
-        lutPath
+        lutPath,
+        highQuality: !!(hqEl?.checked)
       });
       const img = new Image();
       img.onload = () => {
@@ -102,6 +104,7 @@
     const pathEl = getEl('path');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
+    const hqEl = getEl('hq');
     const lutSrc = getEl('lut-src');
     const lutDst = getEl('lut-dst');
     const lutSize = getEl('lut-size');

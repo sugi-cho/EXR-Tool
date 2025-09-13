@@ -66,11 +66,12 @@ async fn open_exr(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
+    high_quality: bool,
 ) -> Result<(u32, u32, String), String> {
     let pathbuf = PathBuf::from(&path);
     log_append(&format!(
-        "open_exr: path='{}' max={} exp={} gamma={} lut={:?}",
-        path, max_size, exposure, gamma, lut_path
+        "open_exr: path='{}' max={} exp={} gamma={} lut={:?} hq={}",
+        path, max_size, exposure, gamma, lut_path, high_quality
     ));
     let img = exrtool_core::load_exr_basic(&pathbuf).map_err(|e| {
         log_append(&format!("open_exr: load failed: {}", e));
@@ -88,7 +89,8 @@ async fn open_exr(
 
     prog.cancel.store(false, Ordering::SeqCst);
     let s_lut = state.lock().lut.clone();
-    let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref());
+    let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
+    let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref(), pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| "invalid image".to_string())?;
     let mut buf: Vec<u8> = Vec::new();
@@ -127,6 +129,7 @@ fn update_preview(
     gamma: f32,
     lut_path: Option<String>,
     use_state_lut: bool,
+    high_quality: bool,
 ) -> Result<(u32, u32, String), String> {
     // 事前にファイルからLUTを読み込んでおく（必要なら）
     let lut_from_file: Option<Lut> = if !use_state_lut {
@@ -161,7 +164,8 @@ fn update_preview(
         }
     };
     let lut_ref = if use_state_lut { s.lut.as_ref() } else { lut_from_file.as_ref() };
-    let preview = generate_preview(img, max_size, exposure, gamma, lut_ref);
+    let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
+    let preview = generate_preview(img, max_size, exposure, gamma, lut_ref, pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| {
             let msg = "update_preview: invalid preview buffer";
