@@ -91,6 +91,19 @@ enum Commands {
         #[arg(short, long)]
         out: PathBuf,
     },
+
+    /// ルールファイルに基づき処理を適用
+    Apply {
+        /// ルールファイル(YAML)
+        #[arg(long)]
+        rules: PathBuf,
+        /// 実行内容のみ表示
+        #[arg(long)]
+        dry_run: bool,
+        /// 出力を上書きする際にバックアップ(.bak)を作成
+        #[arg(long)]
+        backup: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]

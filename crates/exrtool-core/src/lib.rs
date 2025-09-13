@@ -703,3 +703,56 @@ pub fn make_3d_lut_cube(
     }
     out
 }
+
+// ---- Rule Application ----
+#[derive(Debug, Deserialize)]
+pub struct ApplyRule {
+    pub input: PathBuf,
+    #[serde(default)]
+    pub output: Option<PathBuf>,
+    #[serde(default)]
+    pub max_size: Option<u32>,
+    #[serde(default)]
+    pub exposure: Option<f32>,
+    #[serde(default)]
+    pub gamma: Option<f32>,
+    #[serde(default)]
+    pub lut: Option<PathBuf>,
+}
+
+pub fn apply_rules_file(path: &Path, dry_run: bool, backup: bool) -> Result<()> {
+    let text = fs::read_to_string(path)?;
+    let rules: Vec<ApplyRule> = serde_yaml::from_str(&text)?;
+    for r in rules {
+        let input = r.input;
+        let out = r
+            .output
+            .clone()
+            .unwrap_or_else(|| input.with_extension("png"));
+        if dry_run {
+            println!("process: {} -> {}", input.display(), out.display());
+            continue;
+        }
+        let img = load_exr_basic(&input)?;
+        let lut_obj = if let Some(ref p) = r.lut {
+            let txt = fs::read_to_string(p)?;
+            Some(parse_cube(&txt)?)
+        } else {
+            None
+        };
+        let preview = generate_preview(
+            &img,
+            r.max_size.unwrap_or(2048),
+            r.exposure.unwrap_or(0.0),
+            r.gamma.unwrap_or(2.2),
+            lut_obj.as_ref(),
+        );
+        if backup && out.exists() {
+            let bak = out.with_extension("bak");
+            fs::copy(&out, &bak)?;
+        }
+        export_png(&out, &preview)?;
+        println!("saved: {} -> {}", input.display(), out.display());
+    }
+    Ok(())
+}
