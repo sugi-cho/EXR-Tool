@@ -162,7 +162,7 @@
           img.onload = () => {
             const ctx = cv.getContext('2d');
             cv.width = w; cv.height = h;
-            ctx.clearRect(0,0,w,h);
+            ctx.clearRect(0, 0, w, h);
             ctx.drawImage(img, 0, 0);
             if (info) info.textContent = `preview: ${w}x${h}`;
           };
@@ -174,6 +174,8 @@
         }
       }, 120);
     };
+
+    const scheduleUpdate = debounce(updatePreview, 120);
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
     if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
     if (useStateLut) useStateLut.addEventListener('change', () => {
