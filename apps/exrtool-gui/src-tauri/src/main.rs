@@ -56,6 +56,33 @@ impl Default for OpenProgress {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct AppConfig {
+    send_logs: bool,
+}
+
+fn config_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.json")
+}
+
+fn load_config() -> AppConfig {
+    match std::fs::read_to_string(config_path()) {
+        Ok(t) => serde_json::from_str(&t).unwrap_or(AppConfig { send_logs: false }),
+        Err(_) => AppConfig { send_logs: false },
+    }
+}
+
+fn save_config(cfg: &AppConfig) -> Result<(), String> {
+    let s = serde_json::to_string(cfg).map_err(|e| e.to_string())?;
+    std::fs::write(config_path(), s).map_err(|e| e.to_string())
+}
+
+fn send_async(msg: String) {
+    std::thread::spawn(move || {
+        log_append(&msg);
+    });
+}
+
 #[tauri::command]
 async fn open_exr(
     window: tauri::Window,
@@ -496,6 +523,24 @@ fn make_lut3d(
 #[tauri::command]
 fn lut_presets(state: tauri::State<PresetState>) -> Result<Vec<LutPreset>, String> {
     Ok(state.presets.clone())
+}
+
+#[tauri::command]
+fn get_log_permission(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<bool, String> {
+    Ok(state.lock().allow_send)
+}
+
+#[tauri::command]
+fn set_log_permission(
+    state: tauri::State<Arc<Mutex<AppState>>>,
+    allow: bool,
+) -> Result<(), String> {
+    {
+        let mut s = state.lock();
+        s.allow_send = allow;
+    }
+    save_config(&AppConfig { send_logs: allow })?;
+    Ok(())
 }
 
 fn main() {
