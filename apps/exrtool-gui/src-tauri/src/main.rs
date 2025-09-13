@@ -141,23 +141,28 @@ fn update_preview(
     let mut s = state.lock();
     let img = match s.image.as_ref() {
         Some(img) => img,
-        None => return Err("image not loaded".into()),
+        None => {
+            let msg = "update_preview: image not loaded; call open_exr first";
+            log_append(msg);
+            return Err(msg.into());
+        }
     };
-    let lut_ref = if use_state_lut {
-        s.lut.as_ref()
-    } else {
-        lut_from_file.as_ref()
-    };
+    let lut_ref = if use_state_lut { s.lut.as_ref() } else { lut_from_file.as_ref() };
     let preview = generate_preview(img, max_size, exposure, gamma, lut_ref);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
-        .ok_or_else(|| "invalid image".to_string())?;
+        .ok_or_else(|| {
+            let msg = "update_preview: invalid preview buffer";
+            log_append(msg);
+            msg.to_string()
+        })?;
     let mut buf: Vec<u8> = Vec::new();
     image::DynamicImage::ImageRgba8(png)
-        .write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageOutputFormat::Png,
-        )
-        .map_err(|e| e.to_string())?;
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageOutputFormat::Png)
+        .map_err(|e| {
+            let msg = format!("update_preview: encode failed: {}", e);
+            log_append(&msg);
+            msg
+        })?;
     let b64 = BASE64.encode(&buf);
 
     s.scale = (img.width as f32 / preview.width as f32)
