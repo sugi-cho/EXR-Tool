@@ -39,6 +39,8 @@
     const maxEl = getEl('max');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
+    const tmEl = getEl('tonemap');
+    const tmOrderEl = getEl('tm-order');
     const cv = getEl('cv');
     const info = getEl('info');
     if (!pathEl || !cv || !info) return;
@@ -46,6 +48,8 @@
 
     const path = pathEl.value.trim();
     const lutPath = lutEl ? (lutEl.value.trim() || null) : null;
+    const tonemap = tmEl ? tmEl.value : 'none';
+    const tonemapOrder = tmOrderEl ? tmOrderEl.value : 'post';
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
       const [w, h, b64] = await invoke('open_exr', {
@@ -53,7 +57,9 @@
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: parseFloat(expEl?.value ?? '0'),
         gamma: parseFloat(gammaEl?.value ?? '2.2'),
-        lutPath
+        lutPath,
+        toneMap: tonemap,
+        toneMapOrder: tonemapOrder
       });
       const img = new Image();
       img.onload = () => {
@@ -79,6 +85,8 @@
     const pathEl = getEl('path');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');
+    const tonemapEl = getEl('tonemap');
+    const tmOrderEl = getEl('tm-order');
     const lutSrc = getEl('lut-src');
     const lutDst = getEl('lut-dst');
     const lutSize = getEl('lut-size');
@@ -136,11 +144,15 @@
           if (!(await ensureTauriReady())) return;
           const maxEl = getEl('max');
           const lutEl = getEl('lut');
+          const tmEl = getEl('tonemap');
+          const tmOrderEl = getEl('tm-order');
           const [w,h,b64] = await invoke('update_preview', {
             maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
             exposure: parseFloat(expEl?.value ?? '0'),
             gamma: parseFloat(gammaEl?.value ?? '2.2'),
             lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
+            toneMap: tmEl?.value || 'none',
+            toneMapOrder: tmOrderEl?.value || 'post',
             useStateLut: !!(useStateLut?.checked),
           });
           const img = new Image();
@@ -158,6 +170,8 @@
     };
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
     if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
+    if (tonemapEl) tonemapEl.addEventListener('change', scheduleUpdate);
+    if (tmOrderEl) tmOrderEl.addEventListener('change', scheduleUpdate);
     if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
 
     if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
