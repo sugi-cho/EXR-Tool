@@ -51,3 +51,8 @@ cargo run -p exrtool-cli -- apply --rules docs/rules.yml --dry-run false --backu
 補足
 - LUT プリセットは `config/luts.presets.json` をロードします
 - 仕様やアルゴリズムの背景は [docs/LUT.md](docs/LUT.md) を参照
+
+開発と運用補助
+- マージ支援: `scripts/merge_assist.ps1`（PR番号を渡すか、未指定で全オープンPR）
+  - 例: `./scripts/merge_assist.ps1 -Numbers 25,26,27`
+- ローカルCI: `scripts/ci_local.ps1`（fmt/clippy/build/featureチェック）
