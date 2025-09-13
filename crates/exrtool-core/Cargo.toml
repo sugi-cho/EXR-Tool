@@ -15,6 +15,7 @@ image = { version = "0.24", default-features = false, features = ["png", "exr"] 
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 nalgebra = { version = "0.32", default-features = false, features = ["std"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 # optional
 exr = { version = "1.72", optional = true }
