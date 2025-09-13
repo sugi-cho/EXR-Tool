@@ -60,6 +60,9 @@
     const lutPath = (!useStateLutEnabled && lutEl) ? (lutEl.value.trim() || null) : null;
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
+      const t = window.__TAURI__;
+      const listen = t && (t.event && t.event.listen ? t.event.listen : (t.tauri && t.tauri.event && t.tauri.event.listen ? t.tauri.event.listen : null));
+      if (listen) { unlisten = await listen('open-progress', e => { progEl.value = e.payload; }); }
       const [w, h, b64] = await invoke('open_exr', {
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
@@ -78,8 +81,16 @@
       };
       img.src = 'data:image/png;base64,' + b64;
     } catch (e) {
-      appendLog('読み込み失敗: ' + e);
-      alert('読み込み失敗: ' + e);
+      if (String(e).includes('cancelled')) {
+        appendLog('読み込みキャンセル');
+      } else {
+        appendLog('読み込み失敗: ' + e);
+        alert('読み込み失敗: ' + e);
+      }
+    } finally {
+      if (unlisten) unlisten();
+      cancelBtn.remove();
+      progEl.remove();
     }
   }
 

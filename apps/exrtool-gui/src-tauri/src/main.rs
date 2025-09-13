@@ -7,6 +7,7 @@ use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -45,9 +46,21 @@ impl Default for AppState {
     }
 }
 
+struct OpenProgress {
+    cancel: AtomicBool,
+}
+
+impl Default for OpenProgress {
+    fn default() -> Self {
+        Self { cancel: AtomicBool::new(false) }
+    }
+}
+
 #[tauri::command]
-fn open_exr(
+async fn open_exr(
+    window: tauri::Window,
     state: tauri::State<Arc<Mutex<AppState>>>,
+    prog: tauri::State<Arc<OpenProgress>>,
     path: String,
     max_size: u32,
     exposure: f32,
@@ -73,6 +86,7 @@ fn open_exr(
         }
     }
 
+    prog.cancel.store(false, Ordering::SeqCst);
     let s_lut = state.lock().lut.clone();
     let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref());
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
@@ -86,9 +100,6 @@ fn open_exr(
         .map_err(|e| e.to_string())?;
     let b64 = BASE64.encode(&buf);
 
-    let scale = (img.width as f32 / preview.width as f32)
-        .max(img.height as f32 / preview.height as f32)
-        .max(1.0);
     let mut s = state.lock();
     s.image = Some(img);
     s.preview = Some(preview);
@@ -98,6 +109,8 @@ fn open_exr(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height
     ));
+
+    window.emit("open-progress", 100.0).ok();
 
     Ok((
         s.preview.as_ref().unwrap().width,
@@ -233,6 +246,12 @@ fn clear_log() -> Result<(), String> {
     std::fs::write(log_path(), "").map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn cancel_open(prog: tauri::State<Arc<OpenProgress>>) -> Result<(), String> {
+    prog.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 fn log_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("exrtool-gui.log")
 }
@@ -250,6 +269,84 @@ fn log_append(msg: &str) {
     {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+fn generate_preview_progress(
+    img: &LoadedExr,
+    max_size: u32,
+    exposure: f32,
+    gamma: f32,
+    lut: Option<&Lut>,
+    window: &tauri::Window,
+    prog: &OpenProgress,
+) -> Result<PreviewImage, String> {
+    let (w, h) = (img.width as u32, img.height as u32);
+    let scale = if w <= max_size && h <= max_size {
+        1.0
+    } else {
+        (max_size as f32 / w as f32).min(max_size as f32 / h as f32)
+    };
+    let out_w = (w as f32 * scale).round().max(1.0) as u32;
+    let out_h = (h as f32 * scale).round().max(1.0) as u32;
+
+    let mut rgba8 = vec![0u8; (out_w * out_h * 4) as usize];
+    let _ = window.emit("open-progress", 0.0);
+
+    for oy in 0..out_h {
+        for ox in 0..out_w {
+            let sx = (ox as f32) / scale;
+            let sy = (oy as f32) / scale;
+            let x0 = sx.floor().clamp(0.0, (w - 1) as f32) as i32;
+            let y0 = sy.floor().clamp(0.0, (h - 1) as f32) as i32;
+            let x1 = (x0 + 1).min(w as i32 - 1);
+            let y1 = (y0 + 1).min(h as i32 - 1);
+            let tx = (sx - x0 as f32).clamp(0.0, 1.0);
+            let ty = (sy - y0 as f32).clamp(0.0, 1.0);
+
+            let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
+                let idx = (y as usize * img.width + x as usize) * 4;
+                (
+                    img.rgba_f32[idx+0],
+                    img.rgba_f32[idx+1],
+                    img.rgba_f32[idx+2],
+                    img.rgba_f32[idx+3]
+                )
+            };
+            let (r00,g00,b00,a00) = sample(x0,y0);
+            let (r10,g10,b10,a10) = sample(x1,y0);
+            let (r01,g01,b01,a01) = sample(x0,y1);
+            let (r11,g11,b11,a11) = sample(x1,y1);
+            let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
+            let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
+            let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
+            let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
+            let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
+
+            let m = 2.0f32.powf(exposure);
+            r *= m; g *= m; b *= m;
+
+            if let Some(l) = lut {
+                let rgb = l.apply([r, g, b]);
+                r = rgb[0]; g = rgb[1]; b = rgb[2];
+            }
+
+            let rgb = apply_gamma([r, g, b], gamma);
+            let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+
+            let di = (oy * out_w + ox) as usize * 4;
+            rgba8[di + 0] = r8;
+            rgba8[di + 1] = g8;
+            rgba8[di + 2] = b8;
+            rgba8[di + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
+        }
+        let pct = ((oy + 1) as f64 / out_h as f64) * 100.0;
+        let _ = window.emit("open-progress", pct);
+        if prog.cancel.load(Ordering::SeqCst) {
+            return Err("cancelled".to_string());
+        }
+    }
+
+    Ok(PreviewImage { width: out_w, height: out_h, rgba8 })
 }
 
 #[tauri::command]
@@ -403,6 +500,7 @@ fn main() {
             export_preview_png,
             read_log,
             clear_log,
+            cancel_open,
             set_lut_1d,
             set_lut_3d,
             clear_lut,
