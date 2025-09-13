@@ -87,6 +87,31 @@
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
 
+    // 適用モード選択 UI（適用のみ / 保存して適用）
+    const toolbar1 = document.querySelector('header .toolbar');
+    const applyModeKey = 'exrtool_apply_mode';
+    let applyModeInputs = null;
+    if (toolbar1) {
+      const span = document.createElement('span');
+      span.id = 'apply-mode';
+      span.innerHTML =
+        '<label><input type="radio" name="apply-mode" value="apply">適用のみ</label>' +
+        '<label><input type="radio" name="apply-mode" value="save">保存して適用</label>';
+      toolbar1.appendChild(span);
+      applyModeInputs = span.querySelectorAll('input[name="apply-mode"]');
+      const saved = localStorage.getItem(applyModeKey);
+      applyModeInputs.forEach((inp) => {
+        inp.addEventListener('change', () => {
+          if (inp.checked && inp.value === 'save') {
+            localStorage.setItem(applyModeKey, 'save');
+          } else if (inp.checked && inp.value === 'apply') {
+            localStorage.removeItem(applyModeKey);
+          }
+        });
+        inp.checked = saved === 'save' ? inp.value === 'save' : inp.value === 'apply';
+      });
+    }
+
     if (openBtn) openBtn.addEventListener('click', openExr);
 
     if (browseBtn) browseBtn.addEventListener('click', async () => {
