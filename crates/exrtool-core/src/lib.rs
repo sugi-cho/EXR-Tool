@@ -1,3 +1,4 @@
+pub mod rules;
 use anyhow::{anyhow, Result};
 use nalgebra::{Matrix3, Vector3};
 use serde::{Deserialize, Serialize};
