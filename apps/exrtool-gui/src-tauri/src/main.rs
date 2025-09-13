@@ -307,6 +307,7 @@ fn set_lut_3d(
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
+        1024,
     );
     let lut = parse_cube(&text).map_err(|e| e.to_string())?;
     state.lock().lut = Some(lut);
