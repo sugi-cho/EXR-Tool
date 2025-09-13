@@ -19,6 +19,28 @@
     console.log(line);
   }
 
+  function drawHistogram(stats) {
+    const cv = getEl('hist');
+    if (!cv || !stats) return;
+    const ctx = cv.getContext('2d');
+    const bins = stats.hist_r.length;
+    cv.width = bins;
+    cv.height = 100;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const max = Math.max(1, ...stats.hist_r, ...stats.hist_g, ...stats.hist_b);
+    for (let i = 0; i < bins; i++) {
+      const r = stats.hist_r[i] / max * cv.height;
+      const g = stats.hist_g[i] / max * cv.height;
+      const b = stats.hist_b[i] / max * cv.height;
+      ctx.fillStyle = 'rgba(255,0,0,0.5)';
+      ctx.fillRect(i, cv.height - r, 1, r);
+      ctx.fillStyle = 'rgba(0,255,0,0.5)';
+      ctx.fillRect(i, cv.height - g, 1, g);
+      ctx.fillStyle = 'rgba(0,0,255,0.5)';
+      ctx.fillRect(i, cv.height - b, 1, b);
+    }
+  }
+
   async function ensureTauriReady(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -48,7 +70,7 @@
     const lutPath = lutEl ? (lutEl.value.trim() || null) : null;
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
-      const [w, h, b64] = await invoke('open_exr', {
+      const [w, h, b64, stats] = await invoke('open_exr', {
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: parseFloat(expEl?.value ?? '0'),
@@ -63,6 +85,7 @@
         ctx.drawImage(img, 0, 0);
         info.textContent = `preview: ${w}x${h}`;
         appendLog(`open ok: ${w}x${h}`);
+        drawHistogram(stats);
       };
       img.src = 'data:image/png;base64,' + b64;
     } catch (e) {
@@ -136,7 +159,7 @@
           if (!(await ensureTauriReady())) return;
           const maxEl = getEl('max');
           const lutEl = getEl('lut');
-          const [w,h,b64] = await invoke('update_preview', {
+          const [w,h,b64,stats] = await invoke('update_preview', {
             maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
             exposure: parseFloat(expEl?.value ?? '0'),
             gamma: parseFloat(gammaEl?.value ?? '2.2'),
@@ -151,6 +174,7 @@
             ctx.clearRect(0,0,w,h);
             ctx.drawImage(img, 0, 0);
             if (info) info.textContent = `preview: ${w}x${h}`;
+            drawHistogram(stats);
           };
           img.src = 'data:image/png;base64,' + b64;
         } catch (e) { appendLog('update失敗: ' + e); }

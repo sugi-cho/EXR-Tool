@@ -27,6 +27,30 @@ pub struct LoadedExr {
     pub rgba_f32: Vec<f32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageStats {
+    pub hist_r: Vec<u32>,
+    pub hist_g: Vec<u32>,
+    pub hist_b: Vec<u32>,
+}
+
+/// Compute per-channel histogram (0..255) from preview image.
+pub fn compute_image_stats(preview: &PreviewImage, bins: usize) -> ImageStats {
+    let mut hist_r = vec![0u32; bins];
+    let mut hist_g = vec![0u32; bins];
+    let mut hist_b = vec![0u32; bins];
+    let scale = (bins.saturating_sub(1)) as f32 / 255.0;
+    for px in preview.rgba8.chunks_exact(4) {
+        let r = (px[0] as f32 * scale).round() as usize;
+        let g = (px[1] as f32 * scale).round() as usize;
+        let b = (px[2] as f32 * scale).round() as usize;
+        hist_r[r.min(bins-1)] += 1;
+        hist_g[g.min(bins-1)] += 1;
+        hist_b[b.min(bins-1)] += 1;
+    }
+    ImageStats { hist_r, hist_g, hist_b }
+}
+
 impl LoadedExr {
     pub fn get_linear(&self, x: usize, y: usize) -> Option<LinearPixel> {
         if x >= self.width || y >= self.height { return None; }

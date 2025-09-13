@@ -10,7 +10,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use exrtool_core::{export_png, generate_preview, parse_cube, LoadedExr, PreviewImage, Lut};
+use exrtool_core::{
+    export_png,
+    generate_preview,
+    parse_cube,
+    compute_image_stats,
+    ImageStats,
+    LoadedExr,
+    PreviewImage,
+    Lut,
+};
 
 struct AppState {
     image: Option<LoadedExr>,
@@ -33,7 +42,7 @@ fn open_exr(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
-) -> Result<(u32, u32, String), String> {
+) -> Result<(u32, u32, String, ImageStats), String> {
     let pathbuf = PathBuf::from(&path);
     log_append(&format!(
         "open_exr: path='{}' max={} exp={} gamma={} lut={:?}",
@@ -56,6 +65,7 @@ fn open_exr(
 
     let s_lut = state.lock().lut.clone();
     let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref());
+    let stats = compute_image_stats(&preview, 256);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| "invalid image".to_string())?;
     let mut buf: Vec<u8> = Vec::new();
@@ -81,6 +91,7 @@ fn open_exr(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
+        stats,
     ))
 }
 
@@ -92,7 +103,7 @@ fn update_preview(
     gamma: f32,
     lut_path: Option<String>,
     use_state_lut: bool,
-) -> Result<(u32, u32, String), String> {
+) -> Result<(u32, u32, String, ImageStats), String> {
     // 事前にファイルからLUTを読み込んでおく（必要なら）
     let lut_from_file: Option<Lut> = if !use_state_lut {
         if let Some(p) = &lut_path {
@@ -107,6 +118,7 @@ fn update_preview(
     let img = match s.image.as_ref() { Some(img) => img, None => return Err("image not loaded".into()) };
     let lut_ref = if use_state_lut { s.lut.as_ref() } else { lut_from_file.as_ref() };
     let preview = generate_preview(img, max_size, exposure, gamma, lut_ref);
+    let stats = compute_image_stats(&preview, 256);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| "invalid image".to_string())?;
     let mut buf: Vec<u8> = Vec::new();
@@ -126,6 +138,7 @@ fn update_preview(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
+        stats,
     ))
 }
 
