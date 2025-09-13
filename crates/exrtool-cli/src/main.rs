@@ -80,6 +80,9 @@ enum Commands {
         /// テーブルサイズ（既定: 33）
         #[arg(long, default_value_t = 33)]
         size: usize,
+        /// 1D シェーパーサイズ（0で無効）
+        #[arg(long, default_value_t = 1024)]
+        shaper_size: usize,
         /// 出力パス（.cube）
         #[arg(short, long)]
         out: PathBuf,
@@ -118,7 +121,7 @@ fn main() -> Result<()> {
             fs::write(&out, text)?;
             println!("LUT saved: {} ({} -> {}, size={})", out.display(), src, dst, size);
         }
-        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, out } => {
+        Commands::MakeLut3D { src_space, src_tf, dst_space, dst_tf, size, shaper_size, out } => {
             use exrtool_core::{Primaries, TransferFn, make_3d_lut_cube};
             let parse_space = |s:&str| -> Result<Primaries> { match s.to_ascii_lowercase().as_str() {
                 "srgb"|"rec709" => Ok(Primaries::SrgbD65),
@@ -132,11 +135,15 @@ fn main() -> Result<()> {
                 "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
                 "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
                 _ => Err(anyhow::anyhow!("unknown transfer: {}", s)) } };
+            let parse_clip = |s:&str| -> Result<ClipMode> { match s.to_ascii_lowercase().as_str() {
+                "clip" => Ok(ClipMode::Clip),
+                "noclip"|"none" => Ok(ClipMode::NoClip),
+                _ => Err(anyhow::anyhow!("unknown clip mode: {}", s)) } };
             let sp = parse_space(&src_space)?; let dt = parse_space(&dst_space)?;
             let st = parse_tf(&src_tf)?; let tt = parse_tf(&dst_tf)?;
-            let text = make_3d_lut_cube(sp, st, dt, tt, size);
+            let text = make_3d_lut_cube(sp, st, dt, tt, size, shaper_size);
             fs::write(&out, text)?;
-            println!("3D LUT saved: {} ({} {} -> {} {}, size={})", out.display(), src_space, src_tf, dst_space, dst_tf, size);
+            println!("3D LUT saved: {} ({} {} -> {} {}, size={} shaper={})", out.display(), src_space, src_tf, dst_space, dst_tf, size, shaper_size);
         }
     }
     Ok(())

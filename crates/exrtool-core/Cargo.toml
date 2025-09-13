@@ -15,13 +15,14 @@ image = { version = "0.24", default-features = false, features = ["png", "exr"] 
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 nalgebra = { version = "0.32", default-features = false, features = ["std"] }
+rayon = "1.8"
 
 # optional
 exr = { version = "1.72", optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
 
 [[bench]]
-name = "lut_gen"
+name = "make_3d_lut"
 harness = false
