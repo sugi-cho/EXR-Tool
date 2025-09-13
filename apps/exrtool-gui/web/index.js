@@ -19,6 +19,17 @@
     console.log(line);
   }
 
+  function showError(msg) {
+    let el = document.getElementById('errordiv');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'errordiv';
+      el.style.color = 'red';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+  }
+
   async function ensureTauriReady(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -153,7 +164,11 @@
             if (info) info.textContent = `preview: ${w}x${h}`;
           };
           img.src = 'data:image/png;base64,' + b64;
-        } catch (e) { appendLog('update失敗: ' + e); }
+          showError('');
+        } catch (e) {
+          appendLog('update失敗: ' + e);
+          showError('update失敗: ' + e);
+        }
       }, 120);
     };
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
