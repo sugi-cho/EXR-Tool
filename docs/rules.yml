@@ -1,0 +1,20 @@
+# Sample rules configuration for exrtool
+# Demonstrates set, unset, copy, and from_filename actions
+rules:
+  # Set metadata value
+  - type: set
+    key: ImageDescription
+    value: Created by exrtool
+  # Remove a metadata field
+  - type: unset
+    key: Owner
+  # Copy value from one metadata field to another
+  - type: copy
+    from: Software
+    to: XMP:CreatorTool
+  # Extract values from file name using a regex pattern
+  - type: from_filename
+    pattern: "(?P<shot>[^_]+)_(?P<frame>\d+).exr"
+    mapping:
+      shot: ShotName
+      frame: FrameNumber
