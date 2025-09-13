@@ -1,6 +1,7 @@
 (() => {
   let invoke = null; // 解決済みの invoke（nullなら未解決）
   let imgW = 0, imgH = 0;
+  let useStateLutEnabled = false; // LUT in-memory 使用フラグ
 
   function getEl(id) {
     const el = document.getElementById(id);
@@ -17,6 +18,17 @@
       logbox.scrollTop = logbox.scrollHeight;
     }
     console.log(line);
+  }
+
+  function showError(msg) {
+    let el = document.getElementById('errordiv');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'errordiv';
+      el.style.color = 'red';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
   }
 
   async function ensureTauriReady(timeoutMs = 5000) {
@@ -46,9 +58,12 @@
     const ctx = cv.getContext('2d');
 
     const path = pathEl.value.trim();
-    const lutPath = lutEl ? (lutEl.value.trim() || null) : null;
+    const lutPath = (!useStateLutEnabled && lutEl) ? (lutEl.value.trim() || null) : null;
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
+      const t = window.__TAURI__;
+      const listen = t && (t.event && t.event.listen ? t.event.listen : (t.tauri && t.tauri.event && t.tauri.event.listen ? t.tauri.event.listen : null));
+      if (listen) { unlisten = await listen('open-progress', e => { progEl.value = e.payload; }); }
       const [w, h, b64] = await invoke('open_exr', {
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
@@ -68,8 +83,16 @@
       };
       img.src = 'data:image/png;base64,' + b64;
     } catch (e) {
-      appendLog('読み込み失敗: ' + e);
-      alert('読み込み失敗: ' + e);
+      if (String(e).includes('cancelled')) {
+        appendLog('読み込みキャンセル');
+      } else {
+        appendLog('読み込み失敗: ' + e);
+        alert('読み込み失敗: ' + e);
+      }
+    } finally {
+      if (unlisten) unlisten();
+      cancelBtn.remove();
+      progEl.remove();
     }
   }
 
@@ -85,10 +108,13 @@
     const lutSrc = getEl('lut-src');
     const lutDst = getEl('lut-dst');
     const lutSize = getEl('lut-size');
+    const lutPreset = getEl('lut-preset');
     const makeLutBtn = getEl('make-lut');
     const applyPresetBtn = getEl('apply-preset');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
+
+    useStateLutEnabled = !!useStateLut?.checked;
 
     if (openBtn) openBtn.addEventListener('click', openExr);
 
@@ -117,18 +143,39 @@
       } catch (e) { alert('保存に失敗: ' + e); }
     });
 
-    if (cv) cv.addEventListener('mousemove', async (ev) => {
-      if (imgW === 0) return;
-      const rect = cv.getBoundingClientRect();
-      const x = Math.floor((ev.clientX - rect.left));
-      const y = Math.floor((ev.clientY - rect.top));
-      try {
-        if (!(invoke || await ensureTauriReady())) return;
-        const [r,g,b,a] = await invoke('probe_pixel', { px: x, py: y });
-        const readout = getEl('readout');
-        if (readout) readout.textContent = `x:${x}, y:${y}  linear: R ${r.toFixed(6)}  G ${g.toFixed(6)}  B ${b.toFixed(6)}  A ${a.toFixed(6)}`;
-      } catch (_) { /* ignore */ }
-    });
+    if (cv) {
+      cv.addEventListener('mousemove', async (ev) => {
+        if (imgW === 0 || pipetteFixed) return;
+        const rect = cv.getBoundingClientRect();
+        const x = Math.floor((ev.clientX - rect.left));
+        const y = Math.floor((ev.clientY - rect.top));
+        try {
+          if (!(invoke || await ensureTauriReady())) return;
+          const [r,g,b,a] = await invoke('probe_pixel', { px: x, py: y });
+          const readout = getEl('readout');
+          if (readout) readout.textContent = `x:${x}, y:${y}  linear: R ${r.toFixed(6)}  G ${g.toFixed(6)}  B ${b.toFixed(6)}  A ${a.toFixed(6)}`;
+        } catch (_) { /* ignore */ }
+      });
+      cv.addEventListener('click', async (ev) => {
+        if (imgW === 0) return;
+        const rect = cv.getBoundingClientRect();
+        const x = Math.floor((ev.clientX - rect.left));
+        const y = Math.floor((ev.clientY - rect.top));
+        if (!pipetteFixed) {
+          try {
+            if (!(invoke || await ensureTauriReady())) return;
+            const [r,g,b,a] = await invoke('probe_pixel', { px: x, py: y });
+            const text = `x:${x}, y:${y}  linear: R ${r.toFixed(6)}  G ${g.toFixed(6)}  B ${b.toFixed(6)}  A ${a.toFixed(6)}`;
+            const readout = getEl('readout');
+            if (readout) readout.textContent = text;
+            try { await navigator.clipboard.writeText(text); } catch (_) {}
+            pipetteFixed = true;
+          } catch (_) { /* ignore */ }
+        } else {
+          pipetteFixed = false;
+        }
+      });
+    }
 
     // Exposure/Gamma live update (debounced)
     let timer = null;
@@ -143,27 +190,34 @@
             maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
             exposure: parseFloat(expEl?.value ?? '0'),
             gamma: parseFloat(gammaEl?.value ?? '2.2'),
-            lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
-            useStateLut: !!(useStateLut?.checked),
-            highQuality: !!(hqEl?.checked),
+            lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
+            useStateLut: useStateLutEnabled,
           });
           const img = new Image();
           const info = getEl('info');
           img.onload = () => {
             const ctx = cv.getContext('2d');
             cv.width = w; cv.height = h;
-            ctx.clearRect(0,0,w,h);
+            ctx.clearRect(0, 0, w, h);
             ctx.drawImage(img, 0, 0);
             if (info) info.textContent = `preview: ${w}x${h}`;
           };
           img.src = 'data:image/png;base64,' + b64;
-        } catch (e) { appendLog('update失敗: ' + e); }
+          showError('');
+        } catch (e) {
+          appendLog('update失敗: ' + e);
+          showError('update失敗: ' + e);
+        }
       }, 120);
     };
+
+    const scheduleUpdate = debounce(updatePreview, 120);
     if (expEl) expEl.addEventListener('input', scheduleUpdate);
     if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
-    if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
-    if (hqEl) hqEl.addEventListener('change', scheduleUpdate);
+    if (useStateLut) useStateLut.addEventListener('change', () => {
+      useStateLutEnabled = !!useStateLut.checked;
+      scheduleUpdate();
+    });
 
     if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
       try {
@@ -173,6 +227,7 @@
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
         const size = parseInt(lutSize?.value ?? '1024',10) || 1024;
+        const clip = (lutClip?.value || 'clip').toLowerCase();
         if (src === 'linear' || src === 'srgb') {
           // 1D LUT
           await invoke('make_lut', { src, dst, size, outPath: out });
@@ -180,7 +235,7 @@
         } else {
           // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
           // トーンは src: linear, dst: srgb を既定とする。
-          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip, outPath: out });
           appendLog('3D LUT生成: ' + out);
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
@@ -191,6 +246,28 @@
         if (!(await ensureTauriReady())) return;
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
+        const size = parseInt(lutSize?.value ?? '33',10) || 33;
+        const clip = (lutClip?.value || 'clip').toLowerCase();
+        if (src === 'linear' || src === 'srgb') {
+          await invoke('set_lut_1d', { src, dst, size });
+        } else {
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip });
+        }
+        if (useStateLut) useStateLut.checked = true;
+        useStateLutEnabled = true;
+        scheduleUpdate();
+        appendLog('Preset適用: ' + src + ' -> ' + dst);
+      } catch (e) { appendLog('Preset適用失敗: ' + e); }
+    });
+
+    if (lutPreset) lutPreset.addEventListener('change', async () => {
+      const val = lutPreset.value;
+      if (!val) return;
+      const [src, dst] = val.split('-');
+      if (lutSrc) lutSrc.value = src;
+      if (lutDst) lutDst.value = dst;
+      try {
+        if (!(await ensureTauriReady())) return;
         const size = parseInt(lutSize?.value ?? '33',10) || 33;
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
@@ -204,8 +281,10 @@
     });
 
     if (clearLutBtn) clearLutBtn.addEventListener('click', async () => {
-      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
+      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; useStateLutEnabled = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
     });
+
+    if (lutPreset) lutPreset.dispatchEvent(new Event('change'));
 
     // 早期にTauri注入が完了するケース向け
     ensureTauriReady(2000);
