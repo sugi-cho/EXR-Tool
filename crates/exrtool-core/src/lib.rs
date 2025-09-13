@@ -81,6 +81,33 @@ impl LoadedExr {
     }
 }
 
+// ---- EXR Metadata (via exr crate) ----
+#[cfg(feature = "use_exr_crate")]
+pub fn read_metadata(path: &Path) -> Result<ExrMetadata> {
+    use exr::meta::MetaData;
+    let meta = MetaData::read_from_file(path, false)?;
+    let headers = meta
+        .headers
+        .into_iter()
+        .map(|h| ExrHeaderData {
+            layer_name: h.own_attributes.layer_name.map(|t| t.to_string()),
+            layer_position: (
+                h.own_attributes.layer_position.0,
+                h.own_attributes.layer_position.1,
+            ),
+            layer_size: (h.layer_size.0, h.layer_size.1),
+            pixel_aspect: h.shared_attributes.pixel_aspect,
+            line_order: format!("{:?}", h.line_order),
+        })
+        .collect();
+    Ok(ExrMetadata { headers })
+}
+
+#[cfg(not(feature = "use_exr_crate"))]
+pub fn read_metadata(_path: &Path) -> Result<ExrMetadata> {
+    Err(anyhow!("feature `use_exr_crate` is not enabled"))
+}
+
 // ---- EXR Loading (via image crate) ----
 pub fn load_exr_basic(path: &Path) -> Result<LoadedExr> {
     // Use image crate EXR decoder (feature = "exr").
