@@ -135,6 +135,10 @@ fn main() -> Result<()> {
                 "g24"|"gamma2.4" => Ok(TransferFn::Gamma24),
                 "g22"|"gamma2.2" => Ok(TransferFn::Gamma22),
                 _ => Err(anyhow::anyhow!("unknown transfer: {}", s)) } };
+            let parse_clip = |s:&str| -> Result<ClipMode> { match s.to_ascii_lowercase().as_str() {
+                "clip" => Ok(ClipMode::Clip),
+                "noclip"|"none" => Ok(ClipMode::NoClip),
+                _ => Err(anyhow::anyhow!("unknown clip mode: {}", s)) } };
             let sp = parse_space(&src_space)?; let dt = parse_space(&dst_space)?;
             let st = parse_tf(&src_tf)?; let tt = parse_tf(&dst_tf)?;
             let text = make_3d_lut_cube(sp, st, dt, tt, size, shaper_size);

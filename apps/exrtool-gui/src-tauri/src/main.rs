@@ -281,8 +281,9 @@ fn set_lut_3d(
     dst_space: String,
     dst_tf: String,
     size: u32,
+    clip_mode: String,
 ) -> Result<(), String> {
-    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn, ClipMode};
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
             "srgb" | "rec709" => Ok(Primaries::SrgbD65),
@@ -299,6 +300,13 @@ fn set_lut_3d(
             "g24" | "gamma2.4" => Ok(TransferFn::Gamma24),
             "g22" | "gamma2.2" => Ok(TransferFn::Gamma22),
             _ => Err(format!("unknown transfer: {}", s)),
+        }
+    };
+    let parse_clip = |s: &str| -> Result<ClipMode, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "clip" => Ok(ClipMode::Clip),
+            "noclip" | "none" => Ok(ClipMode::NoClip),
+            _ => Err(format!("unknown clip mode: {}", s)),
         }
     };
     let text = make_3d_lut_cube(

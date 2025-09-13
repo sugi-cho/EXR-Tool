@@ -213,6 +213,7 @@
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
         const size = parseInt(lutSize?.value ?? '1024',10) || 1024;
+        const clip = (lutClip?.value || 'clip').toLowerCase();
         if (src === 'linear' || src === 'srgb') {
           // 1D LUT
           await invoke('make_lut', { src, dst, size, outPath: out });
@@ -220,7 +221,7 @@
         } else {
           // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
           // トーンは src: linear, dst: srgb を既定とする。
-          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip, outPath: out });
           appendLog('3D LUT生成: ' + out);
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
@@ -232,10 +233,11 @@
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
         const size = parseInt(lutSize?.value ?? '33',10) || 33;
+        const clip = (lutClip?.value || 'clip').toLowerCase();
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)) });
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip });
         }
         if (useStateLut) useStateLut.checked = true;
         useStateLutEnabled = true;

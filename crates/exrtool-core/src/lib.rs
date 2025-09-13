@@ -307,6 +307,14 @@ pub enum Primaries {
 #[derive(Debug, Clone, Copy)]
 pub enum TransferFn { Linear, Srgb, Gamma24, Gamma22 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ClipMode {
+    /// Clamp values to [0,1]
+    Clip,
+    /// Leave values as-is without clamping
+    NoClip,
+}
+
 fn tf_encode(v: f64, tf: TransferFn) -> f64 {
     match tf {
         TransferFn::Linear => v,
