@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace, PreviewQuality};
-use std::path::PathBuf;
+use exrtool_core::{export_png, generate_preview, load_exr_basic, parse_cube, make_1d_lut, ColorSpace, PreviewQuality, ClipMode};
 use std::fs;
 use std::path::PathBuf;
 
@@ -114,17 +113,7 @@ enum Quality { Fast, High }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    if let Some(cfg) = &cli.ocio {
-        let path = if cfg == "aces1.3" {
-            PathBuf::from("configs/aces1.3/config.ocio")
-        } else {
-            PathBuf::from(cfg)
-        };
-        match load_ocio_config(&path) {
-            Ok(_) => println!("OCIO config loaded: {}", path.display()),
-            Err(e) => eprintln!("OCIO config load failed: {}", e),
-        }
-    }
+    // OCIO連携は現在ビルド無効（use_ocio feature）。対応時に実装を復帰。
     match cli.command {
         Commands::Preview { input, out, max_size, exposure, gamma, lut, quality } => {
             let img = load_exr_basic(&input)?;
@@ -200,6 +189,9 @@ fn main() -> Result<()> {
             let text = make_3d_lut_cube(sp, st, dt, tt, size, shaper_size);
             fs::write(&out, text)?;
             println!("3D LUT saved: {} ({} {} -> {} {}, size={} shaper={})", out.display(), src_space, src_tf, dst_space, dst_tf, size, shaper_size);
+        }
+        Commands::Apply { rules, dry_run, backup } => {
+            exrtool_core::apply_rules_file(&rules, dry_run, backup)?;
         }
     }
     Ok(())

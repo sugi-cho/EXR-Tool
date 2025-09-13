@@ -1,20 +1,33 @@
 pub mod rules;
 use anyhow::{anyhow, Result};
 use nalgebra::{Matrix3, Vector3};
-use serde::{Deserialize, Serialize};
-use std::path::Path;
-
-pub mod rules;
-use nalgebra::{Matrix3, Vector3};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+use image::imageops::FilterType;
 
 #[cfg(feature = "use_exr_crate")]
 pub mod metadata;
 #[cfg(feature = "use_exr_crate")]
 mod save;
-
+#[cfg(feature = "use_ocio")]
 pub mod ocio;
 
+// Minimal metadata structures used by read_metadata() regardless of feature flags
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExrHeaderData {
+    pub layer_name: Option<String>,
+    pub layer_position: (i32, i32),
+    pub layer_size: (u32, u32),
+    pub pixel_aspect: f32,
+    pub line_order: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExrMetadata {
+    pub headers: Vec<ExrHeaderData>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewImage {
     pub width: u32,
@@ -750,6 +763,7 @@ pub fn apply_rules_file(path: &Path, dry_run: bool, backup: bool) -> Result<()> 
             r.exposure.unwrap_or(0.0),
             r.gamma.unwrap_or(2.2),
             lut_obj.as_ref(),
+            PreviewQuality::High,
         );
         if backup && out.exists() {
             let bak = out.with_extension("bak");

@@ -7,6 +7,8 @@ edition = "2021"
 default = []
 # `exr` クレートでの純Rust読込。将来OIIOに置き換え可能。
 use_exr_crate = ["dep:exr"]
+# OpenColorIO 連携（C FFI）。既定では無効。
+use_ocio = []
 
 [dependencies]
 anyhow = "1"
@@ -27,3 +29,10 @@ criterion = { version = "0.5", default-features = false, features = ["html_repor
 [[bench]]
 name = "make_3d_lut"
 harness = false
+
+[build-dependencies]
+
+[target.'cfg(feature = "use_ocio")'.build-dependencies]
+bindgen = { version = "0.69", default-features = false }
+cc = "1"
+pkg-config = "0.3"

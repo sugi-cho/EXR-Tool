@@ -1,16 +1,21 @@
 use std::env;
 use std::path::PathBuf;
 
+#[cfg(feature = "use_ocio")]
 fn main() {
+    // Build OCIO FFI only when feature is enabled
     let pkg = pkg_config::Config::new()
         .probe("OpenColorIO")
         .expect("Could not find OpenColorIO via pkg-config");
 
     let mut build = cc::Build::new();
-    build.cpp(true)
+    build
+        .cpp(true)
         .file("ffi/ocio_c_api.cpp")
         .flag_if_supported("-std=c++17");
-    for p in &pkg.include_paths { build.include(p); }
+    for p in &pkg.include_paths {
+        build.include(p);
+    }
     build.compile("ocio_c_api");
 
     let mut bindings = bindgen::Builder::default()
@@ -24,4 +29,10 @@ fn main() {
     bindings
         .write_to_file(out_path.join("ocio_bindings.rs"))
         .expect("Couldn't write bindings");
+}
+
+#[cfg(not(feature = "use_ocio"))]
+fn main() {
+    // No-op when OCIO feature is disabled
+    println!("cargo:warning=feature 'use_ocio' disabled; skipping OCIO build script");
 }

@@ -12,7 +12,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use exrtool_core::{export_png, generate_preview, parse_cube, LoadedExr, Lut, PreviewImage};
+use exrtool_core::{
+    export_png,
+    generate_preview,
+    parse_cube,
+    LoadedExr,
+    Lut,
+    PreviewImage,
+    PreviewQuality,
+    apply_gamma,
+    srgb_encode,
+    make_3d_lut_cube,
+    Primaries,
+    TransferFn,
+    ClipMode,
+};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct LutPreset {
@@ -33,6 +47,7 @@ struct AppState {
     preview: Option<PreviewImage>,
     scale: f32,       // preview座標→元画像座標への係数 (orig = preview * scale)
     lut: Option<Lut>, // メモリ内LUT（即時プレビュー用）
+    allow_send: bool, // ログ送信許可
 }
 
 impl Default for AppState {
@@ -42,6 +57,7 @@ impl Default for AppState {
             preview: None,
             scale: 1.0,
             lut: None,
+            allow_send: false,
         }
     }
 }
@@ -86,8 +102,8 @@ fn send_async(msg: String) {
 #[tauri::command]
 async fn open_exr(
     window: tauri::Window,
-    state: tauri::State<Arc<Mutex<AppState>>>,
-    prog: tauri::State<Arc<OpenProgress>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    prog: tauri::State<'_, Arc<OpenProgress>>,
     path: String,
     max_size: u32,
     exposure: f32,
@@ -107,20 +123,12 @@ async fn open_exr(
     if let Some(p) = lut_path {
         match std::fs::read_to_string(&p) {
             Ok(t) => match parse_cube(&t) {
-                Ok(lut) => Some(lut),
-                Err(e) => {
-                    log_append(&format!("open_exr: lut parse failed: {}", e));
-                    None
-                }
+                Ok(lut) => { state.lock().lut = Some(lut); },
+                Err(e) => { log_append(&format!("open_exr: lut parse failed: {}", e)); }
             },
-            Err(e) => {
-                log_append(&format!("open_exr: lut read failed '{}': {}", p, e));
-                None
-            }
+            Err(e) => { log_append(&format!("open_exr: lut read failed '{}': {}", p, e)); }
         }
-    } else {
-        None
-    };
+    }
 
     prog.cancel.store(false, Ordering::SeqCst);
     let s_lut = state.lock().lut.clone();
@@ -138,6 +146,9 @@ async fn open_exr(
     let b64 = BASE64.encode(&buf);
 
     let mut s = state.lock();
+    let scale = (img.width as f32 / preview.width as f32)
+        .max(img.height as f32 / preview.height as f32)
+        .max(1.0);
     s.image = Some(img);
     s.preview = Some(preview);
     s.scale = scale;
@@ -153,13 +164,12 @@ async fn open_exr(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
-        stats,
     ))
 }
 
 #[tauri::command]
 fn update_preview(
-    state: tauri::State<Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     max_size: u32,
     exposure: f32,
     gamma: f32,
@@ -233,13 +243,12 @@ fn update_preview(
         s.preview.as_ref().unwrap().width,
         s.preview.as_ref().unwrap().height,
         b64,
-        stats,
     ))
 }
 
 #[tauri::command]
 fn probe_pixel(
-    state: tauri::State<Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     px: u32,
     py: u32,
 ) -> Result<(f32, f32, f32, f32), String> {
@@ -262,7 +271,7 @@ fn probe_pixel(
 
 #[tauri::command]
 fn export_preview_png(
-    state: tauri::State<Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     out_path: String,
 ) -> Result<(), String> {
     let s = state.lock();
@@ -290,7 +299,7 @@ fn clear_log() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn cancel_open(prog: tauri::State<Arc<OpenProgress>>) -> Result<(), String> {
+fn cancel_open(prog: tauri::State<'_, Arc<OpenProgress>>) -> Result<(), String> {
     prog.cancel.store(true, Ordering::SeqCst);
     Ok(())
 }
@@ -394,7 +403,7 @@ fn generate_preview_progress(
 
 #[tauri::command]
 fn set_lut_1d(
-    state: tauri::State<Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     src: String,
     dst: String,
     size: u32,
@@ -415,7 +424,7 @@ fn set_lut_1d(
 
 #[tauri::command]
 fn set_lut_3d(
-    state: tauri::State<Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     src_space: String,
     src_tf: String,
     dst_space: String,
@@ -463,7 +472,7 @@ fn set_lut_3d(
 }
 
 #[tauri::command]
-fn clear_lut(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
+fn clear_lut(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
     state.lock().lut = None;
     Ok(())
 }
@@ -516,12 +525,13 @@ fn make_lut3d(
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
+        1024,
     );
     std::fs::write(out_path, text).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn lut_presets(state: tauri::State<PresetState>) -> Result<Vec<LutPreset>, String> {
+fn lut_presets(state: tauri::State<'_, PresetState>) -> Result<Vec<LutPreset>, String> {
     Ok(state.presets.clone())
 }
 
