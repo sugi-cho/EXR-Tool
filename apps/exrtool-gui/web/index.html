@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ExrTool Preview</title>
     <link rel="stylesheet" href="style.css" />
+    <style>
+      #attr-table { border-collapse: collapse; }
+      #attr-table th, #attr-table td { border: 1px solid #ccc; padding: 2px 4px; }
+      #attr-table tr.added { background: #e0ffe0; }
+      #attr-table tr.modified { background: #fff4c2; }
+      #attr-table tr.deleted { background: #ffd6d6; text-decoration: line-through; }
+    </style>
   </head>
   <body>
     <header>
@@ -16,7 +23,7 @@
         <label>Max <input id="max" type="number" value="2048"/></label>
         <label>Exp <input id="exp" type="range" min="-8" max="8" step="0.1" value="0"/></label>
         <label>Gamma <input id="gamma" type="range" min="0.1" max="3.0" step="0.1" value="2.2"/></label>
-        <label><input id="use-state-lut" type="checkbox"/> Use LUT(in-memory)</label>
+        <label><input id="use-state-lut" type="checkbox" checked/> Use LUT(in-memory)</label>
         <button id="open">開く</button>
         <button id="save">PNG書き出し</button>
         <button id="showlog">ログ表示</button>
@@ -26,6 +33,14 @@
         <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>→ 先<select id="lut-dst"><option>srgb</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
+        <label>Preset
+          <select id="lut-preset">
+            <option value="">-</option>
+            <option value="acescg-srgb" selected>ACEScg → sRGB</option>
+            <option value="aces2065-srgb">ACES2065-1 → sRGB</option>
+            <option value="srgb-acescg">sRGB → ACEScg</option>
+          </select>
+        </label>
         <button id="make-lut">LUT生成(.cube)</button>
         <button id="apply-preset">Preset適用(メモリ)</button>
         <button id="clear-lut">LUT解除</button>
@@ -35,8 +50,17 @@
     <main>
       <canvas id="cv"></canvas>
       <div>
+        <canvas id="hist" width="256" height="100"></canvas>
         <div class="readout" id="readout">x: -, y: -, linear: -</div>
         <pre id="logbox" class="logbox"></pre>
+        <div id="attrs">
+          <h2>Attributes</h2>
+          <button id="add-attr">属性追加</button>
+          <table id="attr-table">
+            <thead><tr><th>Name</th><th>Value</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </main>
     <script src="index.js"></script>
