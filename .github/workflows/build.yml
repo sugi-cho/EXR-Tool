@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-cli:
+    name: Build CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - run: cargo build -p exrtool-cli --release
+      - uses: actions/upload-artifact@v3
+        with:
+          name: exrtool-cli-${{ matrix.os }}
+          path: target/release/exrtool-cli*
+
+  build-gui:
+    name: Build Tauri GUI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tauri-apps/setup-tauri@v1
+      - run: cargo build --release --manifest-path apps/exrtool-gui/src-tauri/Cargo.toml
+      - uses: actions/upload-artifact@v3
+        with:
+          name: exrtool-gui-${{ matrix.os }}
+          path: apps/exrtool-gui/src-tauri/target/release/exrtool-gui*
