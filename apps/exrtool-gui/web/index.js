@@ -72,20 +72,23 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    const openBtn = getEl('open');
-    const browseBtn = getEl('browse');
-    const saveBtn = getEl('save');
-    const cv = getEl('cv');
-    const pathEl = getEl('path');
-    const expEl = getEl('exp');
-    const gammaEl = getEl('gamma');
-    const lutSrc = getEl('lut-src');
-    const lutDst = getEl('lut-dst');
-    const lutSize = getEl('lut-size');
-    const makeLutBtn = getEl('make-lut');
-    const applyPresetBtn = getEl('apply-preset');
-    const clearLutBtn = getEl('clear-lut');
-    const useStateLut = getEl('use-state-lut');
+      const openBtn = getEl('open');
+      const browseBtn = getEl('browse');
+      const saveBtn = getEl('save');
+      const cv = getEl('cv');
+      const pathEl = getEl('path');
+      const expEl = getEl('exp');
+      const gammaEl = getEl('gamma');
+      const lutSrc = getEl('lut-src');
+      const lutDst = getEl('lut-dst');
+      const lutSize = getEl('lut-size');
+      const makeLutBtn = getEl('make-lut');
+      const applyPresetBtn = getEl('apply-preset');
+      const clearLutBtn = getEl('clear-lut');
+      const useStateLut = getEl('use-state-lut');
+      const displaySel = getEl('display');
+      const viewSel = getEl('view');
+      const applyViewBtn = getEl('apply-view');
 
     if (openBtn) openBtn.addEventListener('click', openExr);
 
@@ -134,15 +137,15 @@
       timer = setTimeout(async () => {
         try {
           if (!(await ensureTauriReady())) return;
-          const maxEl = getEl('max');
-          const lutEl = getEl('lut');
-          const [w,h,b64] = await invoke('update_preview', {
-            maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
-            exposure: parseFloat(expEl?.value ?? '0'),
-            gamma: parseFloat(gammaEl?.value ?? '2.2'),
-            lutPath: (lutEl && lutEl.value.trim() && !(useStateLut?.checked)) ? lutEl.value.trim() : null,
-            useStateLut: !!(useStateLut?.checked),
-          });
+            const maxEl = getEl('max');
+            const lutEl = getEl('lut');
+            const [w,h,b64] = await invoke('update_preview', {
+              maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
+              exposure: parseFloat(expEl?.value ?? '0'),
+              gamma: parseFloat(gammaEl?.value ?? '2.2'),
+              lutPath: (lutEl && lutEl.value.trim()) ? lutEl.value.trim() : null,
+              useStateLut: !!(useStateLut?.checked),
+            });
           const img = new Image();
           const info = getEl('info');
           img.onload = () => {
@@ -156,9 +159,25 @@
         } catch (e) { appendLog('update失敗: ' + e); }
       }, 120);
     };
-    if (expEl) expEl.addEventListener('input', scheduleUpdate);
-    if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
-    if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
+      if (expEl) expEl.addEventListener('input', scheduleUpdate);
+      if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
+      if (useStateLut) useStateLut.addEventListener('change', scheduleUpdate);
+
+      async function applyOcio() {
+        const display = (displaySel?.value || 'srgb').toLowerCase();
+        const view = (viewSel?.value || 'srgb').toLowerCase();
+        try {
+          if (!(await ensureTauriReady())) return;
+          await invoke('set_lut_3d', { srcSpace: 'acescg', srcTf: 'linear', dstSpace: display, dstTf: view, size: 33 });
+          if (useStateLut) useStateLut.checked = true;
+          if (imgW > 0) scheduleUpdate();
+          appendLog('OCIO: ' + display + ' / ' + view);
+        } catch (e) { appendLog('OCIO設定失敗: ' + e); }
+      }
+      if (displaySel) displaySel.addEventListener('change', applyOcio);
+      if (viewSel) viewSel.addEventListener('change', applyOcio);
+      if (applyViewBtn) applyViewBtn.addEventListener('click', applyOcio);
+      applyOcio();
 
     if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
       try {
