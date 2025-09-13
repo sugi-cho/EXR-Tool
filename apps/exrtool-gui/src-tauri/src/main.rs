@@ -80,12 +80,20 @@ async fn open_exr(
     if let Some(p) = lut_path {
         match std::fs::read_to_string(&p) {
             Ok(t) => match parse_cube(&t) {
-                Ok(lut) => state.lock().lut = Some(lut),
-                Err(e) => log_append(&format!("open_exr: lut parse failed: {}", e)),
+                Ok(lut) => Some(lut),
+                Err(e) => {
+                    log_append(&format!("open_exr: lut parse failed: {}", e));
+                    None
+                }
             },
-            Err(e) => log_append(&format!("open_exr: lut read failed '{}': {}", p, e)),
+            Err(e) => {
+                log_append(&format!("open_exr: lut read failed '{}': {}", p, e));
+                None
+            }
         }
-    }
+    } else {
+        None
+    };
 
     prog.cancel.store(false, Ordering::SeqCst);
     let s_lut = state.lock().lut.clone();
