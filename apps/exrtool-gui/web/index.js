@@ -48,6 +48,7 @@
   async function openExr() {
     const pathEl = getEl('path');
     const lutEl = getEl('lut');
+    const ocioEl = getEl('ocio');
     const maxEl = getEl('max');
     const expEl = getEl('exp');
     const gammaEl = getEl('gamma');

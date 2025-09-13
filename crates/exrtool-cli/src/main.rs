@@ -9,6 +9,9 @@ use std::path::PathBuf;
 #[command(name = "exrtool")]
 #[command(about = "EXR プレビューとピクセル検査のCLI", long_about = None)]
 struct Cli {
+    /// OCIO config: "aces1.3" or file path
+    #[arg(long)]
+    ocio: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -111,6 +114,17 @@ enum Quality { Fast, High }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(cfg) = &cli.ocio {
+        let path = if cfg == "aces1.3" {
+            PathBuf::from("configs/aces1.3/config.ocio")
+        } else {
+            PathBuf::from(cfg)
+        };
+        match load_ocio_config(&path) {
+            Ok(_) => println!("OCIO config loaded: {}", path.display()),
+            Err(e) => eprintln!("OCIO config load failed: {}", e),
+        }
+    }
     match cli.command {
         Commands::Preview { input, out, max_size, exposure, gamma, lut, quality } => {
             let img = load_exr_basic(&input)?;
