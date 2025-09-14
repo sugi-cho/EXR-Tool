@@ -3,12 +3,13 @@
 use anyhow::Result;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -78,6 +79,8 @@ struct AppConfig {
     send_logs: bool,
 }
 
+const LOG_ENDPOINT: &str = "https://example.com/log";
+
 fn config_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.json")
 }
@@ -94,9 +97,17 @@ fn save_config(cfg: &AppConfig) -> Result<(), String> {
     std::fs::write(config_path(), s).map_err(|e| e.to_string())
 }
 
-fn send_async(msg: String) {
+fn send_async(line: String) {
     std::thread::spawn(move || {
-        log_append(&msg);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        if let Ok(c) = client {
+            let _ = c
+                .post(LOG_ENDPOINT)
+                .json(&json!({ "log": line }))
+                .send();
+        }
     });
 }
 
@@ -333,6 +344,9 @@ fn log_append(msg: &str) {
         .open(log_path())
     {
         let _ = f.write_all(line.as_bytes());
+    }
+    if load_config().send_logs {
+        send_async(line);
     }
 }
 
@@ -740,8 +754,16 @@ fn main() {
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default();
 
+    let cfg = load_config();
+    let mut state = AppState::default();
+    state.allow_send = cfg.send_logs;
+
+    std::panic::set_hook(Box::new(|info| {
+        log_append(&format!("panic: {}", info));
+    }));
+
     tauri::Builder::default()
-        .manage(Arc::new(Mutex::new(AppState::default())))
+        .manage(Arc::new(Mutex::new(state)))
         .manage(Arc::new(OpenProgress::default()))
         .manage(PresetState { presets })
         .invoke_handler(tauri::generate_handler![
@@ -761,7 +783,9 @@ fn main() {
             make_lut3d,
             seq_fps,
             export_prores,
-            write_log
+            write_log,
+            get_log_permission,
+            set_log_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

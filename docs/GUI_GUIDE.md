@@ -15,6 +15,7 @@
   - 調整パネル: `Max Size`, `Exposure`, `Gamma`, `High Quality`（HQリサイズ）
   - LUT関連: 外部 `.cube` 指定／プリセット選択／メモリ内LUTのON/OFF
   - 情報表示: `preview: WxH`、ログ表示ボタン
+  - 設定: 匿名ログ送信を許可するオプション（既定はOFF）
 
 参考: ![メイン画面の例](img/ui_main.png)
 
