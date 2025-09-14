@@ -16,6 +16,8 @@ use exrtool_core::{
     apply_gamma, export_png, generate_preview, load_exr_basic, make_3d_lut_cube, parse_cube,
     srgb_encode, ClipMode, LoadedExr, Lut, PreviewImage, PreviewQuality, Primaries, TransferFn,
 };
+#[cfg(feature = "use_ocio")]
+use exrtool_core::ocio::{Config as OcioConfig, Processor as OcioProcessor};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct LutPreset {
@@ -37,6 +39,14 @@ struct AppState {
     scale: f32,       // preview座標→元画像座標への係数 (orig = preview * scale)
     lut: Option<Lut>, // メモリ内LUT（即時プレビュー用）
     allow_send: bool, // ログ送信許可
+    #[cfg(feature = "use_ocio")]
+    ocio_cfg: Option<OcioConfig>,
+    #[cfg(feature = "use_ocio")]
+    ocio_proc: Option<OcioProcessor>,
+    #[cfg(feature = "use_ocio")]
+    ocio_display: Option<String>,
+    #[cfg(feature = "use_ocio")]
+    ocio_view: Option<String>,
 }
 
 impl Default for AppState {
@@ -47,6 +57,14 @@ impl Default for AppState {
             scale: 1.0,
             lut: None,
             allow_send: false,
+            #[cfg(feature = "use_ocio")]
+            ocio_cfg: None,
+            #[cfg(feature = "use_ocio")]
+            ocio_proc: None,
+            #[cfg(feature = "use_ocio")]
+            ocio_display: None,
+            #[cfg(feature = "use_ocio")]
+            ocio_view: None,
         }
     }
 }
