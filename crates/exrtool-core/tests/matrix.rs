@@ -56,6 +56,7 @@ fn matrix_srgb_to_rec2020_matches_manual() {
         Primaries::Rec2020D65,
         TransferFn::Linear,
         2,
+        0,
     );
     let lut = parse_cube(&lut_str).unwrap();
     let m = rgb_to_rgb_matrix_manual(Primaries::SrgbD65, Primaries::Rec2020D65);

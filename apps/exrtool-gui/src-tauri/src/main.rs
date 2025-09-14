@@ -6,27 +6,15 @@ use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use exrtool_core::{
-    export_png,
-    generate_preview,
-    load_exr_basic,
-    parse_cube,
-    LoadedExr,
-    Lut,
-    PreviewImage,
-    PreviewQuality,
-    apply_gamma,
-    srgb_encode,
-    make_3d_lut_cube,
-    Primaries,
-    TransferFn,
-    ClipMode,
+    apply_gamma, export_png, generate_preview, load_exr_basic, make_3d_lut_cube, parse_cube,
+    srgb_encode, ClipMode, LoadedExr, Lut, PreviewImage, PreviewQuality, Primaries, TransferFn,
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -37,7 +25,7 @@ struct LutPreset {
     dst_space: String,
     dst_tf: String,
     size: u32,
-} 
+}
 
 struct PresetState {
     presets: Vec<LutPreset>,
@@ -69,7 +57,9 @@ struct OpenProgress {
 
 impl Default for OpenProgress {
     fn default() -> Self {
-        Self { cancel: AtomicBool::new(false) }
+        Self {
+            cancel: AtomicBool::new(false),
+        }
     }
 }
 
@@ -124,10 +114,16 @@ async fn open_exr(
     if let Some(ref p) = lut_path {
         match std::fs::read_to_string(&p) {
             Ok(t) => match parse_cube(&t) {
-                Ok(lut) => { state.lock().lut = Some(lut); },
-                Err(e) => { log_append(&format!("open_exr: lut parse failed: {}", e)); }
+                Ok(lut) => {
+                    state.lock().lut = Some(lut);
+                }
+                Err(e) => {
+                    log_append(&format!("open_exr: lut parse failed: {}", e));
+                }
             },
-            Err(e) => { log_append(&format!("open_exr: lut read failed '{}': {}", p, e)); }
+            Err(e) => {
+                log_append(&format!("open_exr: lut read failed '{}': {}", p, e));
+            }
         }
     }
 
@@ -140,7 +136,11 @@ async fn open_exr(
     } else {
         log_append("open_exr: no LUT");
     }
-    let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
+    let pq = if high_quality {
+        PreviewQuality::High
+    } else {
+        PreviewQuality::Fast
+    };
     let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref(), pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| "invalid image".to_string())?;
@@ -219,13 +219,28 @@ fn update_preview(
             return Err(msg.into());
         }
     };
-    let lut_ref = if use_state_lut { s.lut.as_ref() } else { lut_from_file.as_ref() };
-    if use_state_lut {
-        log_append(&format!("update_preview: use_state_lut={}, has_state_lut={}", use_state_lut, s.lut.is_some()));
+    let lut_ref = if use_state_lut {
+        s.lut.as_ref()
     } else {
-        log_append(&format!("update_preview: use_file_lut, file_lut_present={}", lut_from_file.is_some()));
+        lut_from_file.as_ref()
+    };
+    if use_state_lut {
+        log_append(&format!(
+            "update_preview: use_state_lut={}, has_state_lut={}",
+            use_state_lut,
+            s.lut.is_some()
+        ));
+    } else {
+        log_append(&format!(
+            "update_preview: use_file_lut, file_lut_present={}",
+            lut_from_file.is_some()
+        ));
     }
-    let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
+    let pq = if high_quality {
+        PreviewQuality::High
+    } else {
+        PreviewQuality::Fast
+    };
     let preview = generate_preview(img, max_size, exposure, gamma, lut_ref, pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| {
@@ -235,7 +250,10 @@ fn update_preview(
         })?;
     let mut buf: Vec<u8> = Vec::new();
     image::DynamicImage::ImageRgba8(png)
-        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageOutputFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut buf),
+            image::ImageOutputFormat::Png,
+        )
         .map_err(|e| {
             let msg = format!("update_preview: encode failed: {}", e);
             log_append(&msg);
@@ -368,35 +386,51 @@ fn generate_preview_progress(
             let tx = (sx - x0 as f32).clamp(0.0, 1.0);
             let ty = (sy - y0 as f32).clamp(0.0, 1.0);
 
-            let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
+            let sample = |x: i32, y: i32| -> (f32, f32, f32, f32) {
                 let idx = (y as usize * img.width + x as usize) * 4;
                 (
-                    img.rgba_f32[idx+0],
-                    img.rgba_f32[idx+1],
-                    img.rgba_f32[idx+2],
-                    img.rgba_f32[idx+3]
+                    img.rgba_f32[idx + 0],
+                    img.rgba_f32[idx + 1],
+                    img.rgba_f32[idx + 2],
+                    img.rgba_f32[idx + 3],
                 )
             };
-            let (r00,g00,b00,a00) = sample(x0,y0);
-            let (r10,g10,b10,a10) = sample(x1,y0);
-            let (r01,g01,b01,a01) = sample(x0,y1);
-            let (r11,g11,b11,a11) = sample(x1,y1);
-            let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
-            let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
-            let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
-            let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
-            let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
+            let (r00, g00, b00, a00) = sample(x0, y0);
+            let (r10, g10, b10, a10) = sample(x1, y0);
+            let (r01, g01, b01, a01) = sample(x0, y1);
+            let (r11, g11, b11, a11) = sample(x1, y1);
+            let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+            let r0 = lerp(r00, r10, tx);
+            let r1 = lerp(r01, r11, tx);
+            let mut r = lerp(r0, r1, ty);
+            let g0 = lerp(g00, g10, tx);
+            let g1 = lerp(g01, g11, tx);
+            let mut g = lerp(g0, g1, ty);
+            let b0 = lerp(b00, b10, tx);
+            let b1 = lerp(b01, b11, tx);
+            let mut b = lerp(b0, b1, ty);
+            let a0 = lerp(a00, a10, tx);
+            let a1 = lerp(a01, a11, tx);
+            let a = lerp(a0, a1, ty);
 
             let m = 2.0f32.powf(exposure);
-            r *= m; g *= m; b *= m;
+            r *= m;
+            g *= m;
+            b *= m;
 
             if let Some(l) = lut {
                 let rgb = l.apply([r, g, b]);
-                r = rgb[0]; g = rgb[1]; b = rgb[2];
+                r = rgb[0];
+                g = rgb[1];
+                b = rgb[2];
             }
 
             let rgb = apply_gamma([r, g, b], gamma);
-            let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+            let (r8, g8, b8) = (
+                srgb_encode(rgb[0]),
+                srgb_encode(rgb[1]),
+                srgb_encode(rgb[2]),
+            );
 
             let di = (oy * out_w + ox) as usize * 4;
             rgba8[di + 0] = r8;
@@ -411,7 +445,11 @@ fn generate_preview_progress(
         }
     }
 
-    Ok(PreviewImage { width: out_w, height: out_h, rgba8 })
+    Ok(PreviewImage {
+        width: out_w,
+        height: out_h,
+        rgba8,
+    })
 }
 
 #[tauri::command]
@@ -445,7 +483,7 @@ fn set_lut_3d(
     size: u32,
     clip_mode: String,
 ) -> Result<(), String> {
-    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn, ClipMode};
+    use exrtool_core::{make_3d_lut_cube, ClipMode, Primaries, TransferFn};
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
             "srgb" | "rec709" => Ok(Primaries::SrgbD65),
@@ -499,10 +537,22 @@ fn read_metadata(path: String) -> Result<Vec<(String, String)>, String> {
             // Flatten headers into key-value pairs for simple display
             let mut out: Vec<(String, String)> = Vec::new();
             for (i, h) in meta.headers.iter().enumerate() {
-                out.push((format!("header{}.layer_name", i), h.layer_name.clone().unwrap_or_default()));
-                out.push((format!("header{}.layer_pos", i), format!("{},{}", h.layer_position.0, h.layer_position.1)));
-                out.push((format!("header{}.layer_size", i), format!("{}x{}", h.layer_size.0, h.layer_size.1)));
-                out.push((format!("header{}.pixel_aspect", i), format!("{}", h.pixel_aspect)));
+                out.push((
+                    format!("header{}.layer_name", i),
+                    h.layer_name.clone().unwrap_or_default(),
+                ));
+                out.push((
+                    format!("header{}.layer_pos", i),
+                    format!("{},{}", h.layer_position.0, h.layer_position.1),
+                ));
+                out.push((
+                    format!("header{}.layer_size", i),
+                    format!("{}x{}", h.layer_size.0, h.layer_size.1),
+                ));
+                out.push((
+                    format!("header{}.pixel_aspect", i),
+                    format!("{}", h.pixel_aspect),
+                ));
                 out.push((format!("header{}.line_order", i), h.line_order.clone()));
             }
             Ok(out)
@@ -530,6 +580,7 @@ fn make_lut(src: String, dst: String, size: u32, out_path: String) -> Result<(),
 
 #[tauri::command]
 fn make_lut3d(
+    window: tauri::Window,
     src_space: String,
     src_tf: String,
     dst_space: String,
@@ -537,7 +588,11 @@ fn make_lut3d(
     size: u32,
     out_path: String,
 ) -> Result<(), String> {
-    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+    use exrtool_core::{make_3d_lut_cube_progress, Primaries, TransferFn};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
             "srgb" | "rec709" => Ok(Primaries::SrgbD65),
@@ -556,15 +611,36 @@ fn make_lut3d(
             _ => Err(format!("unknown transfer: {}", s)),
         }
     };
-    let text = make_3d_lut_cube(
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_clone = cancel.clone();
+    let id = window.listen("lut-cancel", move |_| {
+        cancel_clone.store(true, Ordering::SeqCst);
+    });
+    let _ = window.emit("lut-progress", 0.0);
+    let text = make_3d_lut_cube_progress(
         parse_space(&src_space)?,
         parse_tf(&src_tf)?,
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
         1024,
+        |pct| {
+            let _ = window.emit("lut-progress", pct);
+            !cancel.load(Ordering::SeqCst)
+        },
     );
-    std::fs::write(out_path, text).map_err(|e| e.to_string())
+    window.unlisten(id);
+    match text {
+        Ok(t) => {
+            if cancel.load(Ordering::SeqCst) {
+                Err("cancelled".into())
+            } else {
+                let _ = window.emit("lut-progress", 100.0);
+                std::fs::write(out_path, t).map_err(|e| e.to_string())
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[tauri::command]
@@ -612,11 +688,25 @@ async fn seq_fps(
         use std::{collections::HashMap, path::PathBuf};
         let window_clone = window.clone();
         let result = tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
-            fn collect(dir: &PathBuf, recursive: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+            fn collect(
+                dir: &PathBuf,
+                recursive: bool,
+                out: &mut Vec<PathBuf>,
+            ) -> std::io::Result<()> {
                 for entry in std::fs::read_dir(dir)? {
-                    let e = entry?; let p = e.path();
-                    if p.is_dir() { if recursive { collect(&p, recursive, out)?; } }
-                    else if p.extension().map(|s| s.to_string_lossy().to_ascii_lowercase()) == Some("exr".into()) { out.push(p); }
+                    let e = entry?;
+                    let p = e.path();
+                    if p.is_dir() {
+                        if recursive {
+                            collect(&p, recursive, out)?;
+                        }
+                    } else if p
+                        .extension()
+                        .map(|s| s.to_string_lossy().to_ascii_lowercase())
+                        == Some("exr".into())
+                    {
+                        out.push(p);
+                    }
                 }
                 Ok(())
             }
@@ -624,7 +714,7 @@ async fn seq_fps(
             let mut files = Vec::new();
             let d = PathBuf::from(dir);
             collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
-            files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
+            files.sort_by(|a, b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
             let total = files.len().max(1) as f64;
             let _ = window_clone.emit("seq-progress", 0.0);
             if dry_run {
@@ -632,7 +722,10 @@ async fn seq_fps(
                 return Ok(files.len());
             }
             let mut map = HashMap::new();
-            map.insert(attr.unwrap_or_else(|| "FramesPerSecond".into()), format!("{}", fps));
+            map.insert(
+                attr.unwrap_or_else(|| "FramesPerSecond".into()),
+                format!("{}", fps),
+            );
             let mut ok = 0usize;
             let mut baks: Vec<PathBuf> = Vec::new();
             let mut last_emit = Instant::now();
@@ -641,32 +734,49 @@ async fn seq_fps(
                 if backup && !dry_run {
                     let bak = f.with_extension("exr.bak");
                     if let Err(e) = std::fs::copy(&f, &bak) {
-                        log_append(&format!("seq_fps backup failed {} -> {}: {}", f.display(), bak.display(), e));
-                    } else { baks.push(bak); }
+                        log_append(&format!(
+                            "seq_fps backup failed {} -> {}: {}",
+                            f.display(),
+                            bak.display(),
+                            e
+                        ));
+                    } else {
+                        baks.push(bak);
+                    }
                 }
                 match exrtool_core::metadata::write_metadata(&f, &map, None) {
                     Ok(_) => ok += 1,
                     Err(e) => log_append(&format!("seq_fps failed {}: {}", f.display(), e)),
                 }
                 let pct = (((i as f64) + 1.0) / total * 100.0) as f64;
-                if pct - last_pct >= 0.5 || last_emit.elapsed() >= Duration::from_millis(100) || (i + 1) == files.len() {
+                if pct - last_pct >= 0.5
+                    || last_emit.elapsed() >= Duration::from_millis(100)
+                    || (i + 1) == files.len()
+                {
                     let _ = window_clone.emit("seq-progress", pct);
                     last_pct = pct;
                     last_emit = Instant::now();
                 }
             }
             if ok as f64 == total {
-                for b in baks { let _ = std::fs::remove_file(&b); }
+                for b in baks {
+                    let _ = std::fs::remove_file(&b);
+                }
             } else {
                 log_append("seq_fps: errors occurred; backups are kept");
             }
             Ok(ok)
-        }).await.map_err(|e| e.to_string())?;
+        })
+        .await
+        .map_err(|e| e.to_string())?;
         result
     }
     #[cfg(not(feature = "exr_pure"))]
     {
-        Err("This build does not include EXR metadata support. Rebuild with feature exr_pure.".into())
+        Err(
+            "This build does not include EXR metadata support. Rebuild with feature exr_pure."
+                .into(),
+        )
     }
 }
 
@@ -684,33 +794,70 @@ fn export_prores(
     window: tauri::Window,
 ) -> Result<(), String> {
     use std::process::{Command, Stdio};
-    if Command::new("ffmpeg").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
+    if Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_err()
+    {
         return Err("ffmpeg not found. Please install ffmpeg and ensure it's on PATH.".into());
     }
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let e = entry.map_err(|e| e.to_string())?; let p = e.path();
-        if p.is_file() && p.extension().map(|s| s.to_string_lossy().to_ascii_lowercase())==Some("exr".into()) { files.push(p); }
+        let e = entry.map_err(|e| e.to_string())?;
+        let p = e.path();
+        if p.is_file()
+            && p.extension()
+                .map(|s| s.to_string_lossy().to_ascii_lowercase())
+                == Some("exr".into())
+        {
+            files.push(p);
+        }
     }
-    files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
-    if files.is_empty() { return Err("no EXR files found".into()); }
+    files.sort_by(|a, b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
+    if files.is_empty() {
+        return Err("no EXR files found".into());
+    }
     // LUT
     let mut lut_obj = None;
     let cs = colorspace.to_lowercase();
     if cs != "linear:srgb" {
         use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
-        let (sp, dp) = if cs=="acescg:srgb" { (Primaries::ACEScgD60, Primaries::SrgbD65) } else if cs=="aces2065:srgb" { (Primaries::ACES2065_1D60, Primaries::SrgbD65) } else { (Primaries::SrgbD65, Primaries::SrgbD65) };
+        let (sp, dp) = if cs == "acescg:srgb" {
+            (Primaries::ACEScgD60, Primaries::SrgbD65)
+        } else if cs == "aces2065:srgb" {
+            (Primaries::ACES2065_1D60, Primaries::SrgbD65)
+        } else {
+            (Primaries::SrgbD65, Primaries::SrgbD65)
+        };
         let text = make_3d_lut_cube(sp, TransferFn::Linear, dp, TransferFn::Srgb, 33, 1024);
         lut_obj = Some(parse_cube(&text).map_err(|e| e.to_string())?);
     }
     // spawn ffmpeg
     let mut child = Command::new("ffmpeg")
-        .arg("-y").arg("-f").arg("image2pipe").arg("-r").arg(format!("{}", fps))
-        .arg("-vcodec").arg("png").arg("-i").arg("-")
-        .arg("-c:v").arg("prores_ks").arg("-profile:v").arg(match profile.as_str() { "422hq"=>"3", "422"=>"2", "4444"=>"4", _=>"3" })
+        .arg("-y")
+        .arg("-f")
+        .arg("image2pipe")
+        .arg("-r")
+        .arg(format!("{}", fps))
+        .arg("-vcodec")
+        .arg("png")
+        .arg("-i")
+        .arg("-")
+        .arg("-c:v")
+        .arg("prores_ks")
+        .arg("-profile:v")
+        .arg(match profile.as_str() {
+            "422hq" => "3",
+            "422" => "2",
+            "4444" => "4",
+            _ => "3",
+        })
         .arg(out)
         .stdin(Stdio::piped())
-        .spawn().map_err(|e| e.to_string())?;
+        .spawn()
+        .map_err(|e| e.to_string())?;
     {
         use image::ImageOutputFormat;
         use std::io::Write;
@@ -718,17 +865,29 @@ fn export_prores(
         let total = files.len() as f64;
         for (i, f) in files.iter().enumerate() {
             let img = load_exr_basic(f).map_err(|e| e.to_string())?;
-            let pq = if quality.to_lowercase()=="high" { PreviewQuality::High } else { PreviewQuality::Fast };
+            let pq = if quality.to_lowercase() == "high" {
+                PreviewQuality::High
+            } else {
+                PreviewQuality::Fast
+            };
             let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
-            let buf = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8).ok_or("invalid buffer")?;
+            let buf = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8)
+                .ok_or("invalid buffer")?;
             let mut bytes: Vec<u8> = Vec::new();
-            image::DynamicImage::ImageRgba8(buf).write_to(&mut std::io::Cursor::new(&mut bytes), ImageOutputFormat::Png).map_err(|e| e.to_string())?;
+            image::DynamicImage::ImageRgba8(buf)
+                .write_to(
+                    &mut std::io::Cursor::new(&mut bytes),
+                    ImageOutputFormat::Png,
+                )
+                .map_err(|e| e.to_string())?;
             stdin.write_all(&bytes).map_err(|e| e.to_string())?;
-            let _ = window.emit("video-progress", ((i as f64 + 1.0)/total*100.0) as f64);
+            let _ = window.emit("video-progress", ((i as f64 + 1.0) / total * 100.0) as f64);
         }
     }
     let status = child.wait().map_err(|e| e.to_string())?;
-    if !status.success() { return Err(format!("ffmpeg exited with {:?}", status)); }
+    if !status.success() {
+        return Err(format!("ffmpeg exited with {:?}", status));
+    }
     Ok(())
 }
 
