@@ -147,7 +147,6 @@
     const ocioEl = getEl('ocio');
     const maxEl = getEl('max');
     // Exposure slider removed
-    const tfEl = getEl('tf');
     const hqEl = getEl('hq');
     const cv = getEl('cv');
     const info = getEl('info');
@@ -165,7 +164,7 @@
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: 0,
-        gamma: 2.2,
+        gamma: 1.0,
         lutPath,
         highQuality: !!(hqEl?.checked)
       });
@@ -258,17 +257,14 @@
     const hqEl = getEl('hq');
     // Advanced UI 廃止
     const lutSize = getEl('lut-size');
-    const lutClip = getEl('lut-clip');
-    // Preset UI 廃止
-    const makeLutBtn = getEl('make-lut');
-    const cancelLutBtn = getEl('cancel-lut');
-    const lutProg = getEl('lut-progress');
+    // Clipは固定（clip）
     const applyTransformBtn = getEl('apply-transform');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
     const addAttrBtn = getEl('add-attr');
     const progIntervalEl = getEl('progress-interval');
     const progThreshEl = getEl('progress-threshold');
+    const defaultTransformEl = getEl('default-transform');
     const logConsentEl = getEl('log-consent');
     attrTable = getEl('attr-table');
     const scopeChannelEl = getEl('scope-channel');
@@ -302,6 +298,27 @@
           transformEl.innerHTML = Object.keys(byGroup)
             .map(g => `<optgroup label="${g}">` + byGroup[g].map(t => `<option value="${t.label}">${t.label}</option>`).join('') + `</optgroup>`)
             .join('');
+          // Settings側のDefault Transformも同じ一覧を流用
+          if (defaultTransformEl) {
+            defaultTransformEl.innerHTML = Object.keys(byGroup)
+              .map(g => `<optgroup label="${g}">` + byGroup[g].map(t => `<option value="${t.label}">${t.label}</option>`).join('') + `</optgroup>`)
+              .join('');
+          }
+          // 既定Transformを読み込んで選択
+          try {
+            const def = await invoke('get_default_transform');
+            if (def && transformEl.querySelector(`option[value="${def}"]`)) {
+              transformEl.value = def;
+              if (defaultTransformEl) defaultTransformEl.value = def;
+            } else {
+              // 初期値: 最初の項目
+              const first = transformEl.querySelector('option');
+              if (first) {
+                transformEl.value = first.value;
+                if (defaultTransformEl) defaultTransformEl.value = first.value;
+              }
+            }
+          } catch (_) {}
           await logBoth('Transform一覧をロードしました');
         }
       } catch (e) { await logBoth('Transform読込失敗: ' + e); }
@@ -316,6 +333,16 @@
       const rev = transforms.find(x => x.src_space === cur.dst_space && x.src_tf === cur.dst_tf && x.dst_space === cur.src_space && x.dst_tf === cur.src_tf);
       if (rev) { transformEl.value = rev.label; await logBoth('Transform反転: ' + rev.label); transformEl.dispatchEvent(new Event('change')); }
       else { await logBoth('Transform反転候補なし'); }
+    });
+
+    // Settings: 既定Transformの保存
+    if (defaultTransformEl) defaultTransformEl.addEventListener('change', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const label = defaultTransformEl.value;
+        await invoke('set_default_transform', { label });
+        await logBoth('Default Transform 保存: ' + label);
+      } catch (e) { appendLog('Default Transform 保存失敗: ' + e); }
     });
 
     // load config
@@ -351,10 +378,10 @@
         const dialogOpen = t && (t.dialog && t.dialog.open) ? t.dialog.open : (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open ? t.tauri.dialog.open : null);
         if (dialogOpen) {
           const selected = await dialogOpen({ multiple: false, filters: [{ name: 'EXR', extensions: ['exr'] }] });
-          if (selected) { pathEl.value = selected; }
+          if (selected) { pathEl.value = selected; await openExr(); }
         } else {
           const p = prompt('EXRファイルのパスを入力');
-          if (p) pathEl.value = p;
+          if (p) { pathEl.value = p; await openExr(); }
         }
       } catch (e) { appendLog('ファイルダイアログ失敗: ' + e); }
     });
@@ -444,7 +471,7 @@
         const [w,h,b64] = await invoke('update_preview', {
           maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
           exposure: 0,
-          gamma: 2.2,
+          gamma: 1.0,
           lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
           useStateLut: useStateLutEnabled,
           highQuality: !!(hqEl?.checked)
@@ -473,32 +500,7 @@
       updateLater();
     });
 
-    if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
-      try {
-        const out = prompt('生成する .cube の保存先パス:', 'linear_to_srgb.cube');
-        if (!out) return;
-        if (!(await ensureTauriReady())) return;
-        const selLabel = transformEl?.value;
-        const tsel = transforms.find(t => t.label === selLabel);
-        if (!tsel) { appendLog('Transform未選択'); return; }
-        const size = parseInt(lutSize?.value ?? String(tsel.size || 33),10) || (tsel.size || 33);
-        const t = window.__TAURI__;
-        if (t && t.event && t.event.listen && lutProg && cancelLutBtn) {
-          lutProg.style.display = 'inline'; lutProg.value = 0; cancelLutBtn.style.display = 'inline';
-          const unlisten = await t.event.listen('lut-progress', e => { try { lutProg.value = e.payload; } catch(_){} });
-          const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
-          cancelLutBtn.addEventListener('click', cancelHandler);
-          try {
-            await invoke('make_lut3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), outPath: out });
-            await logBoth('3D LUT生成: ' + tsel.label + ' -> ' + out);
-          } catch (e) { appendLog('LUT生成失敗: ' + e); }
-          finally { unlisten(); cancelLutBtn.removeEventListener('click', cancelHandler); lutProg.style.display = 'none'; cancelLutBtn.style.display = 'none'; }
-        } else {
-          await invoke('make_lut3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), outPath: out });
-          await logBoth('3D LUT生成: ' + tsel.label + ' -> ' + out);
-        }
-      } catch (e) { appendLog('LUT生成失敗: ' + e); }
-    });
+    // LUT生成機能は削除
 
     if (applyTransformBtn) applyTransformBtn.addEventListener('click', async () => {
       try {
@@ -507,8 +509,7 @@
         const tsel = transforms.find(t => t.label === selLabel);
         if (!tsel) { appendLog('Transform未選択'); return; }
         const size = parseInt(lutSize?.value ?? String(tsel.size || 33),10) || (tsel.size || 33);
-        const clip = (lutClip?.value || 'clip').toLowerCase();
-        await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: clip });
+        await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: 'clip' });
         if (useStateLut) useStateLut.checked = true; useStateLutEnabled = true;
         updateLater();
         await logBoth('Transform適用: ' + tsel.label);
@@ -531,7 +532,7 @@
           await invoke('set_lut_1d', { src, dst, size });
         } else {
           const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: (lutClip?.value || 'clip').toLowerCase() });
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: 'clip' });
         }
         if (useStateLut) useStateLut.checked = true;
         updateLater();

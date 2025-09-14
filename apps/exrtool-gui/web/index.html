@@ -24,11 +24,9 @@
       <h1>ExrTool</h1>
       <div class="toolbar">
         <input id="path" placeholder="EXRファイルのパス" size="50" />
-        <button id="browse">参照…</button>
-        <input id="lut" placeholder=".cube LUTのパス(任意)" size="36" />
+        <button id="browse">開く</button>
         <input id="ocio" placeholder="OCIO config(aces1.3 or path)" size="36" />
         <label>Max <input id="max" type="number" value="2048"/></label>
-        <label>TF <select id="tf"><option value="g22" selected>g22</option><option value="g24">g24</option><option value="linear">linear</option></select></label>
         <label><input id="hq" type="checkbox"/> High Quality</label>
         <label><input id="use-state-lut" type="checkbox" checked/> Use LUT(in-memory)</label>
         <button id="open">開く</button>
@@ -45,15 +43,7 @@
         <label>Transform <select id="transform"></select></label>
         <button id="swap-transform">Swap</button>
         <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
-        <label>Clip
-          <select id="lut-clip">
-            <option value="clip" selected>Clip</option>
-            <option value="noclip">NoClip</option>
-          </select>
-        </label>
-        <button id="make-lut">LUT生成(.cube)</button>
-        <button id="cancel-lut" style="display:none;">キャンセル</button>
-        <progress id="lut-progress" max="100" value="0" style="width:120px; display:none;"></progress>
+        
         <button id="apply-transform">Transform適用(メモリ)</button>
         <button id="clear-lut">LUT解除</button>
       </div>
@@ -152,6 +142,7 @@
       <div class="toolbar">
         <label>Progress Interval (ms) <input id="progress-interval" type="number" min="0" value="100"/></label>
         <label>Progress Threshold (%) <input id="progress-threshold" type="number" min="0" step="0.1" value="0.5"/></label>
+        <label>Default Transform <select id="default-transform"></select></label>
         <label><input id="log-consent" type="checkbox" /> 解析情報送信を許可</label>
       </div>
     </section>
