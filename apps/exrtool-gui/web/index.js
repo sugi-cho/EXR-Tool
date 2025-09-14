@@ -166,8 +166,9 @@
         tabBtnPreview?.classList.add('active'); tabBtnVideo?.classList.remove('active');
       }
     }
-    tabBtnPreview?.addEventListener('click', ()=>activate('preview'));
-    tabBtnVideo?.addEventListener('click', ()=>activate('video'));
+    tabBtnPreview?.addEventListener('click', ()=>{ logBoth('tab: preview'); activate('preview'); });
+    tabBtnVideo?.addEventListener('click', ()=>{ logBoth('tab: video'); activate('video'); });
+    logBoth('boot: video controls present? browse-seq=' + (!!document.getElementById('browse-seq')) + ', browse-prores-out=' + (!!document.getElementById('browse-prores-out')));
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
     const saveBtn = getEl('save');
