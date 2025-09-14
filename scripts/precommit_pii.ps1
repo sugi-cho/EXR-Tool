@@ -73,7 +73,7 @@ foreach($file in $staged){
     git add -- $file | Out-Null
     Write-Warn "PII auto-redacted in $file (${($finds | Select-Object -ExpandProperty Kind | Sort-Object -Unique) -join ', '})"
   } else {
-    Write-Err "PII detected in $file:"; $finds | Format-Table -AutoSize | Out-String | Write-Host
+    Write-Err ("PII detected in {0}:" -f $file); $finds | Format-Table -AutoSize | Out-String | Write-Host
     $hasBlockingFind = $true
   }
 }
@@ -84,4 +84,3 @@ if($hasBlockingFind){
 }
 
 exit 0
-
