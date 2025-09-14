@@ -9,6 +9,8 @@ apps/exrtool-gui/web/.vite/
 *.log
 .DS_Store
 
+# Local preview artifacts
+apps/exrtool-gui/src-tauri/preview.png
+
 # VSCode
 .vscode/
-
