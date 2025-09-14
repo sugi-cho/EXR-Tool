@@ -12,8 +12,10 @@ EXR の高速プレビュー／LUT適用／簡易編集ツールです。Rust �
 
 構成
 - `crates/exrtool-core`: 画像ロード/プレビュー/LUT/PNG 書出し、3D LUT 生成、各種ユーティリティ
-- `crates/exrtool-cli`: CLI（preview/probe/make-lut1d/make-lut3d/apply）
+- `crates/exrtool-cli`: CLI（preview/probe/make-lut1d/make-lut3d/apply/prores※）
 - `apps/exrtool-gui`: Tauri GUI（プレビュー、LUTプリセット、PNG保存、Video Tools ほか）
+
+※ `prores` サブコマンドを利用するには `ffmpeg` のインストールが必要です。
 
 セットアップ（Windows 10/11）
 - docs/BOOTSTRAP.md の手順に従い、PowerShell（管理者）で実行
@@ -29,7 +31,7 @@ cargo tauri dev
 注: Video Tools（FPS設定/ProRes）は `exr_pure` 機能を有効にしたGUIビルドが必要です。
 例: `cargo tauri dev -- -F exr_pure`
 
-CLI 例
+CLI 例（`prores` サブコマンドを使う場合は `ffmpeg` のインストールが必要）
 ```bash
 # プレビューPNGを書き出し（オプション: --lut で .cube 適用、--quality high でHQ）
 cargo run -p exrtool-cli -- preview "C:\path\to\input.exr" -o preview.png --max-size 2048 --exposure 0 --gamma 2.2 --quality high
@@ -45,6 +47,9 @@ cargo run -p exrtool-cli -- make-lut3d --src-space acescg --src-tf linear --dst-
 
 # ルールに基づく一括適用（PNG書出し）。dry-run/backup対応
 cargo run -p exrtool-cli -- apply --rules docs/rules.yml --dry-run false --backup true
+
+# 連番EXRから動画を生成（ffmpegが必要）
+cargo run -p exrtool-cli -- prores --dir frames --out movie.mov --fps 24 --codec prores_ks --profile 422hq
 ```
 
 ## Video Tools（GUI）
