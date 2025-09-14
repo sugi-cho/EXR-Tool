@@ -155,9 +155,6 @@
     const lutPath = null; // 外部LUT読込は廃止
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
-      const t = window.__TAURI__;
-      const listen = t && (t.event && t.event.listen ? t.event.listen : (t.tauri && t.tauri.event && t.tauri.event.listen ? t.tauri.event.listen : null));
-      if (listen) { unlisten = await listen('open-progress', e => { progEl.value = e.payload; }); }
       const [w, h, b64] = await invoke('open_exr', {
         path,
         maxSize: [REDACTED],
@@ -459,18 +456,16 @@
       });
     }
 
-    // TF live update (debounced)
+    // live update (debounced)
     async function updatePreview() {
       try {
         if (!(await ensureTauriReady())) return;
-        const maxEl = getEl('max');
-        const lutEl = getEl('lut');
         const hqEl = getEl('hq');
         const [w,h,b64] = await invoke('update_preview', {
-          maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
+          maxSize: [REDACTED],
           exposure: 0,
           gamma: 1.0,
-          lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
+          lutPath: null,
           useStateLut: useStateLutEnabled,
           highQuality: !!(hqEl?.checked)
         });
