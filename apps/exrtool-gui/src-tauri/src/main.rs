@@ -598,40 +598,71 @@ fn write_log(s: String) -> Result<(), String> {
 
 // --- Video / Sequence commands ---
 #[tauri::command]
-fn seq_fps(
+async fn seq_fps(
+    window: tauri::Window,
     dir: String,
     fps: f32,
     attr: Option<String>,
     recursive: bool,
     dry_run: bool,
-    _backup: bool,
+    backup: bool,
 ) -> Result<usize, String> {
     #[cfg(feature = "exr_pure")]
     {
         use std::{collections::HashMap, path::PathBuf};
-        fn collect(dir: &PathBuf, recursive: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
-            for entry in std::fs::read_dir(dir)? {
-                let e = entry?; let p = e.path();
-                if p.is_dir() { if recursive { collect(&p, recursive, out)?; } }
-                else if p.extension().map(|s| s.to_string_lossy().to_ascii_lowercase()) == Some("exr".into()) { out.push(p); }
+        let window_clone = window.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
+            fn collect(dir: &PathBuf, recursive: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+                for entry in std::fs::read_dir(dir)? {
+                    let e = entry?; let p = e.path();
+                    if p.is_dir() { if recursive { collect(&p, recursive, out)?; } }
+                    else if p.extension().map(|s| s.to_string_lossy().to_ascii_lowercase()) == Some("exr".into()) { out.push(p); }
+                }
+                Ok(())
             }
-            Ok(())
-        }
-        let mut files = Vec::new();
-        let d = PathBuf::from(dir);
-        collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
-        files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
-        if dry_run { return Ok(files.len()); }
-        let mut map = HashMap::new();
-        map.insert(attr.unwrap_or_else(|| "FramesPerSecond".into()), format!("{}", fps));
-        let mut ok = 0usize;
-        for f in files {
-            match exrtool_core::metadata::write_metadata(&f, &map, None) {
-                Ok(_) => ok += 1,
-                Err(e) => log_append(&format!("seq_fps failed {}: {}", f.display(), e)),
+            use std::time::{Duration, Instant};
+            let mut files = Vec::new();
+            let d = PathBuf::from(dir);
+            collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
+            files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
+            let total = files.len().max(1) as f64;
+            let _ = window_clone.emit("seq-progress", 0.0);
+            if dry_run {
+                let _ = window_clone.emit("seq-progress", 100.0);
+                return Ok(files.len());
             }
-        }
-        Ok(ok)
+            let mut map = HashMap::new();
+            map.insert(attr.unwrap_or_else(|| "FramesPerSecond".into()), format!("{}", fps));
+            let mut ok = 0usize;
+            let mut baks: Vec<PathBuf> = Vec::new();
+            let mut last_emit = Instant::now();
+            let mut last_pct: f64 = -1.0;
+            for (i, f) in files.iter().enumerate() {
+                if backup && !dry_run {
+                    let bak = f.with_extension("exr.bak");
+                    if let Err(e) = std::fs::copy(&f, &bak) {
+                        log_append(&format!("seq_fps backup failed {} -> {}: {}", f.display(), bak.display(), e));
+                    } else { baks.push(bak); }
+                }
+                match exrtool_core::metadata::write_metadata(&f, &map, None) {
+                    Ok(_) => ok += 1,
+                    Err(e) => log_append(&format!("seq_fps failed {}: {}", f.display(), e)),
+                }
+                let pct = (((i as f64) + 1.0) / total * 100.0) as f64;
+                if pct - last_pct >= 0.5 || last_emit.elapsed() >= Duration::from_millis(100) || (i + 1) == files.len() {
+                    let _ = window_clone.emit("seq-progress", pct);
+                    last_pct = pct;
+                    last_emit = Instant::now();
+                }
+            }
+            if ok as f64 == total {
+                for b in baks { let _ = std::fs::remove_file(&b); }
+            } else {
+                log_append("seq_fps: errors occurred; backups are kept");
+            }
+            Ok(ok)
+        }).await.map_err(|e| e.to_string())?;
+        result
     }
     #[cfg(not(feature = "exr_pure"))]
     {
