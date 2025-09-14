@@ -641,7 +641,7 @@ fn set_lut_3d(
     use exrtool_core::{make_3d_lut_cube, ClipMode, Primaries, TransferFn};
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
-            "srgb" | "rec709" => Ok(Primaries::SrgbD65),
+            "srgb" | "rec709" | "linear" => Ok(Primaries::SrgbD65),
             "rec2020" | "bt2020" => Ok(Primaries::Rec2020D65),
             "acescg" | "ap1" => Ok(Primaries::ACEScgD60),
             "aces2065" | "ap0" | "aces" => Ok(Primaries::ACES2065_1D60),
@@ -750,7 +750,7 @@ fn make_lut3d(
     };
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
-            "srgb" | "rec709" => Ok(Primaries::SrgbD65),
+            "srgb" | "rec709" | "linear" => Ok(Primaries::SrgbD65),
             "rec2020" | "bt2020" => Ok(Primaries::Rec2020D65),
             "acescg" | "ap1" => Ok(Primaries::ACEScgD60),
             "aces2065" | "ap0" | "aces" => Ok(Primaries::ACES2065_1D60),

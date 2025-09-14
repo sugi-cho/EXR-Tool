@@ -1,16 +1,15 @@
 [
-  { "group":"Gamma",   "label":"Linear to Gamma 2.2",   "src_space":"linear", "src_tf":"linear", "dst_space":"linear", "dst_tf":"g22",  "size":33 },
-  { "group":"Gamma",   "label":"Linear to Gamma 2.4",   "src_space":"linear", "src_tf":"linear", "dst_space":"linear", "dst_tf":"g24",  "size":33 },
-  { "group":"Gamma",   "label":"Gamma 2.2 to Linear",   "src_space":"linear", "src_tf":"g22",   "dst_space":"linear", "dst_tf":"linear", "size":33 },
+  { "group":"Gamma",   "label":"Linear to Gamma 2.2",   "src_space":"srgb",   "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"g22",  "size":33 },
+  { "group":"Gamma",   "label":"Linear to Gamma 2.4",   "src_space":"srgb",   "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"g24",  "size":33 },
+  { "group":"Gamma",   "label":"Gamma 2.2 to Linear",   "src_space":"srgb",   "src_tf":"g22",   "dst_space":"srgb",   "dst_tf":"linear", "size":33 },
 
-  { "group":"Display", "label":"Linear to sRGB",        "src_space":"linear", "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"srgb",  "size":33 },
+  { "group":"Display", "label":"Linear to sRGB",        "src_space":"srgb",   "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"srgb",  "size":33 },
   { "group":"Display", "label":"sRGB to Linear",        "src_space":"srgb",   "src_tf":"srgb",   "dst_space":"linear", "dst_tf":"linear", "size":33 },
-  { "group":"Display", "label":"Linear to Rec.709",     "src_space":"linear", "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"srgb",  "size":33 },
+  { "group":"Display", "label":"Linear to Rec.709",     "src_space":"srgb",   "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"srgb",  "size":33 },
   { "group":"Display", "label":"Rec.709 to Linear",     "src_space":"srgb",   "src_tf":"srgb",   "dst_space":"linear", "dst_tf":"linear", "size":33 },
 
-  { "group":"ACES",    "label":"Linear to ACEScg",      "src_space":"linear", "src_tf":"linear", "dst_space":"acescg", "dst_tf":"linear", "size":33 },
+  { "group":"ACES",    "label":"Linear to ACEScg",      "src_space":"srgb",   "src_tf":"linear", "dst_space":"acescg", "dst_tf":"linear", "size":33 },
   { "group":"ACES",    "label":"ACEScg to Linear",      "src_space":"acescg", "src_tf":"linear", "dst_space":"linear", "dst_tf":"linear", "size":33 },
   { "group":"ACES",    "label":"ACEScg to sRGB",        "src_space":"acescg", "src_tf":"linear", "dst_space":"srgb",   "dst_tf":"srgb",  "size":33 },
-  { "group":"ACES",    "label":"Linear to ACES2065-1",  "src_space":"linear", "src_tf":"linear", "dst_space":"aces2065","dst_tf":"linear", "size":33 }
+  { "group":"ACES",    "label":"Linear to ACES2065-1",  "src_space":"srgb",   "src_tf":"linear", "dst_space":"aces2065","dst_tf":"linear", "size":33 }
 ]
-

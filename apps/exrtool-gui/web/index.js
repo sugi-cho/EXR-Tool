@@ -165,7 +165,7 @@
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: 0,
-        gamma: ((()=>{ const v=(tfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })()),
+        gamma: 2.2,
         lutPath,
         highQuality: !!(hqEl?.checked)
       });
@@ -287,6 +287,36 @@
     });
 
     if (openBtn) openBtn.addEventListener('click', openExr);
+
+    // Transform 一覧ロード（Resolve風）
+    const transformEl = getEl('transform');
+    const swapTransformBtn = getEl('swap-transform');
+    let transforms = [];
+    (async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        transforms = await invoke('transform_presets');
+        if (transformEl && Array.isArray(transforms)) {
+          const byGroup = {};
+          for (const t of transforms) { const g = t.group || 'General'; if (!byGroup[g]) byGroup[g] = []; byGroup[g].push(t); }
+          transformEl.innerHTML = Object.keys(byGroup)
+            .map(g => `<optgroup label="${g}">` + byGroup[g].map(t => `<option value="${t.label}">${t.label}</option>`).join('') + `</optgroup>`)
+            .join('');
+          await logBoth('Transform一覧をロードしました');
+        }
+      } catch (e) { await logBoth('Transform読込失敗: ' + e); }
+    })();
+    if (transformEl) transformEl.addEventListener('change', async () => {
+      const t = transforms.find(x => x.label === transformEl.value);
+      if (t) await logBoth('Transform選択: ' + t.label);
+    });
+    if (swapTransformBtn) swapTransformBtn.addEventListener('click', async () => {
+      const cur = transforms.find(x => x.label === transformEl?.value);
+      if (!cur) { await logBoth('Transform未選択'); return; }
+      const rev = transforms.find(x => x.src_space === cur.dst_space && x.src_tf === cur.dst_tf && x.dst_space === cur.src_space && x.dst_tf === cur.src_tf);
+      if (rev) { transformEl.value = rev.label; await logBoth('Transform反転: ' + rev.label); transformEl.dispatchEvent(new Event('change')); }
+      else { await logBoth('Transform反転候補なし'); }
+    });
 
     // load config
     (async () => {
@@ -414,7 +444,7 @@
         const [w,h,b64] = await invoke('update_preview', {
           maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
           exposure: 0,
-          gamma: ((()=>{ const v=(tfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })()),
+          gamma: 2.2,
           lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
           useStateLut: useStateLutEnabled,
           highQuality: !!(hqEl?.checked)
@@ -438,8 +468,6 @@
     }
 
     const updateLater = debounce(updatePreview, 120);
-    if (expEl) expEl.addEventListener('input', updateLater);
-    if (tfEl) tfEl.addEventListener('change', updateLater);
     if (useStateLut) useStateLut.addEventListener('change', () => {
       useStateLutEnabled = !!useStateLut.checked;
       updateLater();
@@ -462,17 +490,17 @@
           cancelLutBtn.addEventListener('click', cancelHandler);
           try {
             await invoke('make_lut3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), outPath: out });
-            appendLog('3D LUT生成: ' + tsel.label + ' -> ' + out);
+            await logBoth('3D LUT生成: ' + tsel.label + ' -> ' + out);
           } catch (e) { appendLog('LUT生成失敗: ' + e); }
           finally { unlisten(); cancelLutBtn.removeEventListener('click', cancelHandler); lutProg.style.display = 'none'; cancelLutBtn.style.display = 'none'; }
         } else {
           await invoke('make_lut3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), outPath: out });
-          appendLog('3D LUT生成: ' + tsel.label + ' -> ' + out);
+          await logBoth('3D LUT生成: ' + tsel.label + ' -> ' + out);
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
     });
 
-    if (applyPresetBtn) applyPresetBtn.addEventListener('click', async () => {
+    if (applyTransformBtn) applyTransformBtn.addEventListener('click', async () => {
       try {
         if (!(await ensureTauriReady())) return;
         const selLabel = transformEl?.value;
@@ -483,10 +511,11 @@
         await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: clip });
         if (useStateLut) useStateLut.checked = true; useStateLutEnabled = true;
         updateLater();
-        appendLog('Transform適用: ' + tsel.label);
+        await logBoth('Transform適用: ' + tsel.label);
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
 
+    /* Preset UI 廃止
     if (lutPreset) lutPreset.addEventListener('change', async () => {
       const val = lutPreset.value;
       if (!val) return;
@@ -515,6 +544,7 @@
     });
 
     if (lutPreset) lutPreset.dispatchEvent(new Event('change'));
+    */
 
     // --- OCIO settings ---
     const ocioDiv = getEl('ocio-settings');
