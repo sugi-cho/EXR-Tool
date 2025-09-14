@@ -471,7 +471,8 @@
             const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
             cancelLutBtn.addEventListener('click', cancelHandler);
             try {
-              await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+          const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), outPath: out });
               appendLog('3D LUT生成: ' + out);
             } catch (e) {
               if (String(e).includes('cancelled')) {
@@ -486,7 +487,8 @@
               cancelLutBtn.style.display = 'none';
             }
           } else {
-            await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+            const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+            await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), outPath: out });
             appendLog('3D LUT生成: ' + out);
           }
         }
@@ -506,7 +508,8 @@
           await invoke('set_lut_1d', { src, dst, size });
         } else {
           // TauriはRustの`clip_mode`引数に対してcamelCaseキー`clipMode`を受け取る
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip });
+          const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: clip });
         }
         if (useStateLut) useStateLut.checked = true;
         useStateLutEnabled = true;
@@ -529,7 +532,8 @@
         if ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb')) {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: (lutClip?.value || 'clip').toLowerCase() });
+          const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: (lutClip?.value || 'clip').toLowerCase() });
         }
         if (useStateLut) useStateLut.checked = true;
         updateLater();
