@@ -1,0 +1,5 @@
+{
+  "send_logs": false,
+  "progress_interval_ms": 100,
+  "progress_pct_threshold": 0.5
+}
