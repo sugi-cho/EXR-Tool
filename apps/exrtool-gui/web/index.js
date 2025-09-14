@@ -158,11 +158,11 @@
       const [w, h, b64] = await invoke('open_exr', {
         path,
         // 最大プレビュー解像度（既定）
-        max_size: 2048,
+        maxSize: 2048,
         exposure: 0,
         gamma: 1.0,
-        lut_path: lutPath,
-        high_quality: !!(hqEl?.checked)
+        lutPath: lutPath,
+        highQuality: !!(hqEl?.checked)
       });
       const img = new Image();
       img.onload = () => {
@@ -362,7 +362,7 @@
         if (!(await ensureTauriReady())) return;
         const ms = parseInt(progIntervalEl?.value ?? '100', 10) || 0;
         const pct = parseFloat(progThreshEl?.value ?? '0.5') || 0;
-        await invoke('set_progress_config', { interval_ms: ms, pct_threshold: pct });
+        await invoke('set_progress_config', { intervalMs: ms, pctThreshold: pct });
       } catch (_) {}
     }, 500);
     progIntervalEl?.addEventListener('input', saveProgress);
@@ -417,7 +417,7 @@
       if (!out) return;
       try {
         if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
-        await invoke('export_preview_png', { out_path: out });
+        await invoke('export_preview_png', { outPath: out });
         appendLog('PNG保存: ' + out);
         alert('保存しました: ' + out);
       } catch (e) { alert('保存に失敗: ' + e); }
@@ -463,12 +463,12 @@
         if (!(await ensureTauriReady())) return;
         const hqEl = getEl('hq');
         const [w,h,b64] = await invoke('update_preview', {
-          max_size: 2048,
+          maxSize: 2048,
           exposure: 0,
           gamma: 1.0,
-          lut_path: null,
-          use_state_lut: useStateLutEnabled,
-          high_quality: !!(hqEl?.checked)
+          lutPath: null,
+          useStateLut: useStateLutEnabled,
+          highQuality: !!(hqEl?.checked)
         });
         const img = new Image();
         const info = getEl('info');
@@ -503,7 +503,7 @@
         const tsel = transforms.find(t => t.label === selLabel);
         if (!tsel) { appendLog('Transform未選択'); return; }
         const size = parseInt(lutSize?.value ?? String(tsel.size || 33),10) || (tsel.size || 33);
-        await invoke('set_lut_3d', { src_space: tsel.src_space, src_tf: tsel.src_tf, dst_space: tsel.dst_space, dst_tf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clip_mode: 'clip' });
+        await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: 'clip' });
         if (useStateLut) useStateLut.checked = true; useStateLutEnabled = true;
         updateLater();
         await logBoth('Transform適用: ' + tsel.label);
@@ -671,7 +671,7 @@
           const cancelHandler = async () => { try { await invoke('cancel_seq_fps'); } catch(_){} };
           if (cancelFpsBtn) cancelFpsBtn.addEventListener('click', cancelHandler);
           try {
-            const count = await invoke('seq_fps', { dir, fps, attr, recursive, dry_run: dryRun, backup: true });
+            const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
             await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
             if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
           } catch (e) {
@@ -686,7 +686,7 @@
             if (cancelFpsBtn) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
           }
         } else {
-          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dry_run: dryRun, backup: true });
+          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
           await showSeqSummary(res.success, res.failure, dryRun);
         }
       } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
@@ -733,12 +733,12 @@
           proresProg.style.display = 'block'; proresProg.value = 0;
           const unlisten = await t.event.listen('video-progress', (e) => { try { proresProg.value = e.payload; } catch(_){} });
           try {
-            await invoke('export_prores', { dir, fps, colorspace, out, profile, max_size: maxSize, exposure, gamma, quality });
+            await invoke('export_prores', { dir, fps, colorspace, out, profile, maxSize, exposure, gamma, quality });
             appendLog('ProRes出力完了: ' + out);
             alert('出力完了: ' + out);
           } finally { unlisten(); proresProg.style.display = 'none'; }
         } else {
-          await invoke('export_prores', { dir, fps, colorspace, out, profile, max_size: maxSize, exposure, gamma, quality });
+          await invoke('export_prores', { dir, fps, colorspace, out, profile, maxSize, exposure, gamma, quality });
           alert('出力完了: ' + out);
         }
       } catch (e) { appendLog('ProRes出力失敗: ' + e); alert('ProRes出力失敗: ' + e); }
