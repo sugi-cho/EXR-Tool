@@ -327,7 +327,9 @@
         if (!(await ensureTauriReady())) return;
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
-        const size = parseInt(lutSize?.value ?? '33',10) || 33;
+        const size = (src === 'linear' || src === 'srgb')
+          ? (parseInt(lutSize?.value ?? '1024',10) || 1024)
+          : (parseInt(lutSize?.value ?? '33',10) || 33);
         const clip = (lutClip?.value || 'clip').toLowerCase();
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
@@ -350,7 +352,9 @@
       if (lutDst) lutDst.value = dst;
       try {
         if (!(await ensureTauriReady())) return;
-        const size = parseInt(lutSize?.value ?? '33',10) || 33;
+        const size = (src === 'linear' || src === 'srgb')
+          ? (parseInt(lutSize?.value ?? '1024',10) || 1024)
+          : (parseInt(lutSize?.value ?? '33',10) || 33);
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
