@@ -36,6 +36,15 @@
     try { if (invoke || await ensureTauriReady()) { await invoke('write_log', { s: msg }); } } catch (_) {}
   }
 
+  async function showSeqSummary(success, failure, dryRun) {
+    const total = success + failure;
+    const msg = dryRun
+      ? `対象ファイル: ${total}`
+      : `連番処理完了: 成功 ${success} 件 / 失敗 ${failure} 件 (全${total}件)`;
+    await logBoth(`seq_fps result: success=${success} failure=${failure} total=${total}${dryRun ? ' (dry-run)' : ''}`);
+    alert(msg);
+  }
+
   function showError(msg) {
     let el = document.getElementById('errordiv');
     if (!el) {
@@ -477,14 +486,12 @@
           seqProg.style.display = 'block'; seqProg.value = 0;
           const unlisten = await t.event.listen('seq-progress', (e) => { try { seqProg.value = e.payload; } catch(_){} });
           try {
-            const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-            await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
-            if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+            const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+            await showSeqSummary(res.success, res.failure, dryRun);
           } finally { unlisten(); seqProg.style.display = 'none'; }
         } else {
-          const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-          await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
-          if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+          await showSeqSummary(res.success, res.failure, dryRun);
         }
       } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
     });

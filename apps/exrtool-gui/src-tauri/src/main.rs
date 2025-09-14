@@ -597,6 +597,11 @@ fn write_log(s: String) -> Result<(), String> {
 }
 
 // --- Video / Sequence commands ---
+#[derive(Serialize)]
+struct SeqSummary {
+    success: usize,
+    failure: usize,
+}
 #[tauri::command]
 async fn seq_fps(
     window: tauri::Window,
@@ -606,12 +611,12 @@ async fn seq_fps(
     recursive: bool,
     dry_run: bool,
     backup: bool,
-) -> Result<usize, String> {
+) -> Result<SeqSummary, String> {
     #[cfg(feature = "exr_pure")]
     {
         use std::{collections::HashMap, path::PathBuf};
         let window_clone = window.clone();
-        let result = tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
+        let result = tauri::async_runtime::spawn_blocking(move || -> Result<SeqSummary, String> {
             fn collect(dir: &PathBuf, recursive: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
                 for entry in std::fs::read_dir(dir)? {
                     let e = entry?; let p = e.path();
@@ -625,11 +630,12 @@ async fn seq_fps(
             let d = PathBuf::from(dir);
             collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
             files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
-            let total = files.len().max(1) as f64;
+            let total_files = files.len();
+            let total = total_files.max(1) as f64;
             let _ = window_clone.emit("seq-progress", 0.0);
             if dry_run {
                 let _ = window_clone.emit("seq-progress", 100.0);
-                return Ok(files.len());
+                return Ok(SeqSummary { success: total_files, failure: 0 });
             }
             let mut map = HashMap::new();
             map.insert(attr.unwrap_or_else(|| "FramesPerSecond".into()), format!("{}", fps));
@@ -660,7 +666,7 @@ async fn seq_fps(
             } else {
                 log_append("seq_fps: errors occurred; backups are kept");
             }
-            Ok(ok)
+            Ok(SeqSummary { success: ok, failure: total_files.saturating_sub(ok) })
         }).await.map_err(|e| e.to_string())?;
         result
     }
