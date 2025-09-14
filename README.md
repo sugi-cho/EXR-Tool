@@ -50,9 +50,6 @@ cargo run -p exrtool-cli -- apply --rules docs/rules.yml --dry-run false --backu
 
 # 単一EXRのFPS属性を設定（FramesPerSecond, backupあり）
 cargo run -p exrtool-cli -- fps-set --input "C:\\path\\to\\frame.exr" --fps 24 --dry-run false --backup true
-
-# 連番EXRから動画を生成（ffmpegが必要）
-cargo run -p exrtool-cli -- prores --dir frames --out movie.mov --fps 24 --codec prores_ks --profile 422hq
 ```
 
 ## Video Tools（GUI）
