@@ -456,6 +456,7 @@
     const seqRecursiveEl = getEl('seq-fps-recursive');
     const seqDryRunEl = getEl('seq-fps-dryrun');
     const applyFpsBtn = getEl('apply-fps');
+    const cancelFpsBtn = getEl('cancel-fps');
     const seqProg = getEl('seq-progress');
 
     const proresFpsEl = getEl('prores-fps');
@@ -502,12 +503,25 @@
         const t = window.__TAURI__;
         if (t && t.event && t.event.listen && seqProg) {
           seqProg.style.display = 'block'; seqProg.value = 0;
+          if (cancelFpsBtn) cancelFpsBtn.style.display = 'inline';
           const unlisten = await t.event.listen('seq-progress', (e) => { try { seqProg.value = e.payload; } catch(_){} });
+          const cancelHandler = async () => { try { await invoke('cancel_seq_fps'); } catch(_){} };
+          if (cancelFpsBtn) cancelFpsBtn.addEventListener('click', cancelHandler);
           try {
             const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
             await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
             if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
-          } finally { unlisten(); seqProg.style.display = 'none'; }
+          } catch (e) {
+            if (String(e).includes('cancelled')) {
+              await logBoth('seq_fps cancelled');
+            } else {
+              appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e);
+            }
+          } finally {
+            unlisten();
+            seqProg.style.display = 'none'; seqProg.value = 0;
+            if (cancelFpsBtn) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
+          }
         } else {
           const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
           await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
