@@ -415,3 +415,101 @@
     });
   });
 })();
+    // --- Video tab controls ---
+    const seqDirEl = getEl('seq-dir');
+    const browseSeqBtn = getEl('browse-seq');
+    const seqFpsEl = getEl('seq-fps');
+    const seqAttrEl = getEl('seq-fps-attr');
+    const seqRecursiveEl = getEl('seq-fps-recursive');
+    const seqDryRunEl = getEl('seq-fps-dryrun');
+    const applyFpsBtn = getEl('apply-fps');
+
+    const proresFpsEl = getEl('prores-fps');
+    const proresCsEl = getEl('prores-colorspace');
+    const proresProfileEl = getEl('prores-profile');
+    const proresMaxEl = getEl('prores-max');
+    const proresExpEl = getEl('prores-exp');
+    const proresGammaEl = getEl('prores-gamma');
+    const proresQualityEl = getEl('prores-quality');
+    const proresOutEl = getEl('prores-out');
+    const browseProresOutBtn = getEl('browse-prores-out');
+    const proresProg = getEl('prores-progress');
+
+    // Folder browse (EXR sequence)
+    if (browseSeqBtn) browseSeqBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const t = window.__TAURI__;
+        const dialogOpen = t && t.dialog && t.dialog.open ? t.dialog.open : null;
+        if (dialogOpen) {
+          const selected = await dialogOpen({ multiple: false, directory: true, defaultPath: seqDirEl?.value || undefined });
+          if (selected && seqDirEl) seqDirEl.value = Array.isArray(selected) ? selected[0] : selected;
+        } else {
+          const p = prompt('EXR連番フォルダのパスを入力'); if (p && seqDirEl) seqDirEl.value = p;
+        }
+      } catch (e) { appendLog('フォルダダイアログ失敗: ' + e); }
+    });
+
+    // Apply FPS to sequence (metadata write)
+    if (applyFpsBtn) applyFpsBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const dir = seqDirEl?.value?.trim();
+        if (!dir) { alert('Sequence Folder を指定してください'); return; }
+        const fps = parseFloat(seqFpsEl?.value ?? '24') || 24;
+        const attr = (seqAttrEl?.value || 'FramesPerSecond');
+        const recursive = !!seqRecursiveEl?.checked;
+        const dryRun = !!seqDryRunEl?.checked;
+        const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+        appendLog(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
+        if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+      } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
+    });
+
+    // ProRes output browse
+    if (browseProresOutBtn) browseProresOutBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const t = window.__TAURI__;
+        const saveDlg = t && t.dialog && t.dialog.save ? t.dialog.save : null;
+        if (saveDlg) {
+          const sel = await saveDlg({ filters: [{ name: 'ProRes MOV', extensions: ['mov'] }], defaultPath: proresOutEl?.value || undefined });
+          if (sel && proresOutEl) proresOutEl.value = sel;
+        } else {
+          const p = prompt('出力MOVのパスを入力 (.mov)'); if (p && proresOutEl) proresOutEl.value = p;
+        }
+      } catch (e) { appendLog('出力選択失敗: ' + e); }
+    });
+
+    // Export ProRes
+    const exportProresBtn = getEl('export-prores');
+    if (exportProresBtn) exportProresBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const dir = seqDirEl?.value?.trim(); const out = proresOutEl?.value?.trim();
+        if (!dir) { alert('Sequence Folder を指定してください'); return; }
+        if (!out) { alert('出力MOVのパスを指定してください'); return; }
+        const fps = parseFloat(proresFpsEl?.value ?? '24') || 24;
+        const colorspace = (proresCsEl?.value || 'linear:srgb');
+        const profile = (proresProfileEl?.value || '422hq');
+        const maxSize = parseInt(proresMaxEl?.value ?? '2048', 10) || 2048;
+        const exposure = parseFloat(proresExpEl?.value ?? '0') || 0;
+        const gamma = parseFloat(proresGammaEl?.value ?? '2.2') || 2.2;
+        const quality = (proresQualityEl?.value || 'High');
+
+        // listen progress
+        const t = window.__TAURI__;
+        if (t && t.event && t.event.listen && proresProg) {
+          proresProg.style.display = 'block'; proresProg.value = 0;
+          const unlisten = await t.event.listen('video-progress', (e) => { try { proresProg.value = e.payload; } catch(_){} });
+          try {
+            await invoke('export_prores', { dir, fps, colorspace, out, profile, maxSize, exposure, gamma, quality });
+            appendLog('ProRes出力完了: ' + out);
+            alert('出力完了: ' + out);
+          } finally { unlisten(); proresProg.style.display = 'none'; }
+        } else {
+          await invoke('export_prores', { dir, fps, colorspace, out, profile, maxSize, exposure, gamma, quality });
+          alert('出力完了: ' + out);
+        }
+      } catch (e) { appendLog('ProRes出力失敗: ' + e); alert('ProRes出力失敗: ' + e); }
+    });
