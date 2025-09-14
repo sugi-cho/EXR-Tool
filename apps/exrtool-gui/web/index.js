@@ -421,7 +421,6 @@
       } catch (e) { appendLog('ログ消去失敗: ' + e); }
     });
   });
-})();
     // --- Video tab controls ---
     const seqDirEl = getEl('seq-dir');
     const browseSeqBtn = getEl('browse-seq');
@@ -430,6 +429,7 @@
     const seqRecursiveEl = getEl('seq-fps-recursive');
     const seqDryRunEl = getEl('seq-fps-dryrun');
     const applyFpsBtn = getEl('apply-fps');
+    const seqProg = getEl('seq-progress');
 
     const proresFpsEl = getEl('prores-fps');
     const proresCsEl = getEl('prores-colorspace');
@@ -471,9 +471,21 @@
         const recursive = !!seqRecursiveEl?.checked;
         const dryRun = !!seqDryRunEl?.checked;
         await logBoth(`seq_fps 実行: dir=${dir} fps=${fps} attr=${attr} recursive=${recursive} dryRun=${dryRun}`);
-        const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-        await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
-        if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+
+        const t = window.__TAURI__;
+        if (t && t.event && t.event.listen && seqProg) {
+          seqProg.style.display = 'block'; seqProg.value = 0;
+          const unlisten = await t.event.listen('seq-progress', (e) => { try { seqProg.value = e.payload; } catch(_){} });
+          try {
+            const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+            await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
+            if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+          } finally { unlisten(); seqProg.style.display = 'none'; }
+        } else {
+          const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+          await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
+          if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+        }
       } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
     });
 
@@ -528,3 +540,4 @@
         }
       } catch (e) { appendLog('ProRes出力失敗: ' + e); alert('ProRes出力失敗: ' + e); }
     });
+})();
