@@ -587,6 +587,7 @@ fn main() {
 
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(AppState::default())))
+        .manage(Arc::new(OpenProgress::default()))
         .manage(PresetState { presets })
         .invoke_handler(tauri::generate_handler![
             open_exr,
