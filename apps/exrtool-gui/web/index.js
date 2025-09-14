@@ -145,6 +145,23 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    // Tabs
+    const tabBtnPreview = document.getElementById('tab-btn-preview');
+    const tabBtnVideo = document.getElementById('tab-btn-video');
+    const tabPreview = document.getElementById('tab-preview');
+    const tabVideo = document.getElementById('tab-video');
+    function activate(tab){
+      if (!tabPreview || !tabVideo) return;
+      if (tab === 'video') {
+        tabPreview.style.display = 'none'; tabVideo.style.display = 'block';
+        tabBtnVideo?.classList.add('active'); tabBtnPreview?.classList.remove('active');
+      } else {
+        tabPreview.style.display = 'block'; tabVideo.style.display = 'none';
+        tabBtnPreview?.classList.add('active'); tabBtnVideo?.classList.remove('active');
+      }
+    }
+    tabBtnPreview?.addEventListener('click', ()=>activate('preview'));
+    tabBtnVideo?.addEventListener('click', ()=>activate('video'));
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
     const saveBtn = getEl('save');
