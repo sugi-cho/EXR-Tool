@@ -40,6 +40,24 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = Quality::Fast)]
         quality: Quality,
     },
+    /// 単一EXRのFPS属性を設定（feature `exr_pure` 必要）
+    FpsSet {
+        /// 入力EXR
+        #[arg(long)]
+        input: PathBuf,
+        /// FPS値（float）
+        #[arg(long)]
+        fps: f32,
+        /// 属性名（既定: FramesPerSecond）
+        #[arg(long, default_value = "FramesPerSecond")]
+        attr: String,
+        /// 変更せずに対象のみ表示
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        /// 上書き時に .bak を作成
+        #[arg(long, default_value_t = true)]
+        backup: bool,
+    },
     /// 連番EXRのFPS属性を一括設定（feature `exr_pure` 必要）
     SeqFps {
         /// ディレクトリ
@@ -253,22 +271,58 @@ fn main() -> Result<()> {
         Commands::Apply { rules, dry_run, backup } => {
             exrtool_core::apply_rules_file(&rules, dry_run, backup)?;
         }
+        Commands::FpsSet { input, fps, attr, dry_run, backup } => {
+            #[cfg(feature = "exr_pure")]
+            {
+                use std::collections::HashMap;
+                if dry_run {
+                    println!("would write {}={} to {}", attr, fps, input.display());
+                    return Ok(());
+                }
+                let bak_path = if backup {
+                    let bak = input.with_extension("exr.bak");
+                    if let Err(e) = fs::copy(&input, &bak) {
+                        eprintln!("backup failed {} -> {}: {}", input.display(), bak.display(), e);
+                        None
+                    } else {
+                        Some(bak)
+                    }
+                } else {
+                    None
+                };
+                let mut map = HashMap::new();
+                map.insert(attr.clone(), format!("{}", fps));
+                match exrtool_core::metadata::write_metadata(&input, &map, None) {
+                    Ok(_) => {
+                        println!("wrote {}={} to {}", attr, fps, input.display());
+                        if let Some(b) = bak_path { let _ = fs::remove_file(b); }
+                    }
+                    Err(e) => {
+                        eprintln!("failed {}: {}", input.display(), e);
+                    }
+                }
+            }
+            #[cfg(not(feature = "exr_pure"))]
+            {
+                eprintln!("fps-set requires --features exr_pure");
+            }
+        }
         Commands::SeqFps { dir, fps, attr, recursive, dry_run, backup } => {
             #[cfg(feature = "exr_pure")]
             {
                 use std::collections::HashMap;
-                let mut files = Vec::new();
-                let walk = |p: &PathBuf, out: &mut Vec<PathBuf>| -> Result<()> {
+                fn collect(p: &PathBuf, recursive: bool, out: &mut Vec<PathBuf>) -> Result<()> {
                     for entry in fs::read_dir(p)? {
                         let e = entry?; let path = e.path();
-                        if path.is_dir() { if recursive { walk(&path, out)?; } }
+                        if path.is_dir() { if recursive { collect(&path, recursive, out)?; } }
                         else if path.extension().map(|s| s.to_string_lossy().to_ascii_lowercase()) == Some("exr".into()) {
                             out.push(path);
                         }
                     }
                     Ok(())
-                };
-                walk(&dir, &mut files)?;
+                }
+                let mut files = Vec::new();
+                collect(&dir, recursive, &mut files)?;
                 files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
                 if files.is_empty() { println!("no EXR files found in {}", dir.display()); return Ok(()); }
                 println!("target files: {}", files.len());
