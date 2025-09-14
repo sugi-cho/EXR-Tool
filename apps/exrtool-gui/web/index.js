@@ -156,6 +156,7 @@
     const lutSrc = getEl('lut-src');
     const lutDst = getEl('lut-dst');
     const lutSize = getEl('lut-size');
+    const lutClip = getEl('lut-clip');
     const lutPreset = getEl('lut-preset');
     const makeLutBtn = getEl('make-lut');
     const applyPresetBtn = getEl('apply-preset');
@@ -331,7 +332,7 @@
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip });
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clip_mode: clip });
         }
         if (useStateLut) useStateLut.checked = true;
         useStateLutEnabled = true;
@@ -352,7 +353,7 @@
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)) });
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clip_mode: (lutClip?.value || 'clip').toLowerCase() });
         }
         if (useStateLut) useStateLut.checked = true;
         updateLater();
