@@ -29,9 +29,15 @@ pub fn write_metadata(
         let key = Text::from(k.as_str());
         let val = Text::from(v.as_str());
         let attr = AttributeValue::Text(val.clone());
-        image.attributes.other.insert(key.clone(), attr.clone());
+
+        // 同名属性の重複を避けるため、まずトップレベルから削除
+        image.attributes.other.remove(&key);
+
+        // レイヤー0があればそちらに集約。なければトップレベルに設定。
         if let Some(layer) = image.layer_data.get_mut(0) {
             layer.attributes.other.insert(key, attr);
+        } else {
+            image.attributes.other.insert(key, AttributeValue::Text(val));
         }
     }
 
