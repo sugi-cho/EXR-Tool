@@ -146,7 +146,7 @@
     const lutEl = getEl('lut');
     const ocioEl = getEl('ocio');
     const maxEl = getEl('max');
-    const expEl = getEl('exp');
+    // Exposure slider removed
     const tfEl = getEl('tf');
     const hqEl = getEl('hq');
     const cv = getEl('cv');
@@ -164,7 +164,7 @@
       const [w, h, b64] = await invoke('open_exr', {
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
-        exposure: parseFloat(expEl?.value ?? '0'),
+        exposure: 0,
         gamma: ((()=>{ const v=(tfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })()),
         lutPath,
         highQuality: !!(hqEl?.checked)
@@ -406,7 +406,7 @@
       });
     }
 
-    // Exposure/TF live update (debounced)
+    // TF live update (debounced)
     async function updatePreview() {
       try {
         if (!(await ensureTauriReady())) return;
@@ -415,7 +415,7 @@
         const hqEl = getEl('hq');
         const [w,h,b64] = await invoke('update_preview', {
           maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
-          exposure: parseFloat(expEl?.value ?? '0'),
+          exposure: 0,
           gamma: ((()=>{ const v=(tfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })()),
           lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
           useStateLut: useStateLutEnabled,
@@ -471,7 +471,7 @@
             const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
             cancelLutBtn.addEventListener('click', cancelHandler);
             try {
-          const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+          const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
           await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), outPath: out });
               appendLog('3D LUT生成: ' + out);
             } catch (e) {
@@ -487,7 +487,7 @@
               cancelLutBtn.style.display = 'none';
             }
           } else {
-            const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+            const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
             await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), outPath: out });
             appendLog('3D LUT生成: ' + out);
           }
@@ -508,7 +508,7 @@
           await invoke('set_lut_1d', { src, dst, size });
         } else {
           // TauriはRustの`clip_mode`引数に対してcamelCaseキー`clipMode`を受け取る
-          const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+          const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
           await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: clip });
         }
         if (useStateLut) useStateLut.checked = true;
@@ -532,7 +532,7 @@
         if ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb')) {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          const dstTf = (dst === 'srgb') ? 'srgb' : 'linear';
+          const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
           await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: (lutClip?.value || 'clip').toLowerCase() });
         }
         if (useStateLut) useStateLut.checked = true;
@@ -632,7 +632,7 @@
     const proresCsEl = getEl('prores-colorspace');
     const proresProfileEl = getEl('prores-profile');
     const proresMaxEl = getEl('prores-max');
-    const proresExpEl = getEl('prores-exp');
+    // Exposure input removed for ProRes
     const proresTfEl = getEl('prores-tf');
     const proresQualityEl = getEl('prores-quality');
     const proresOutEl = getEl('prores-out');
@@ -728,7 +728,7 @@
         const colorspace = (proresCsEl?.value || 'linear:srgb');
         const profile = (proresProfileEl?.value || '422hq');
         const maxSize = parseInt(proresMaxEl?.value ?? '2048', 10) || 2048;
-        const exposure = parseFloat(proresExpEl?.value ?? '0') || 0;
+        const exposure = 0;
         const gamma = ((()=>{ const v=(proresTfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })());
         const quality = (proresQualityEl?.value || 'High');
         await logBoth(`export_prores: dir=${dir} out=${out} fps=${fps} cs=${colorspace} profile=${profile}`);

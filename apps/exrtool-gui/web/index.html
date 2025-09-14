@@ -28,7 +28,6 @@
         <input id="lut" placeholder=".cube LUTのパス(任意)" size="36" />
         <input id="ocio" placeholder="OCIO config(aces1.3 or path)" size="36" />
         <label>Max <input id="max" type="number" value="2048"/></label>
-        <label>Exp <input id="exp" type="range" min="-8" max="8" step="0.1" value="0"/></label>
         <label>TF <select id="tf"><option value="g22" selected>g22</option><option value="g24">g24</option><option value="linear">linear</option></select></label>
         <label><input id="hq" type="checkbox"/> High Quality</label>
         <label><input id="use-state-lut" type="checkbox" checked/> Use LUT(in-memory)</label>
@@ -44,7 +43,7 @@
       </div>
       <div class="toolbar">
         <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
-        <label>→ 先<select id="lut-dst"><option>srgb</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
+        <label>→ 先<select id="lut-dst"><option>srgb</option><option>g22</option><option>g24</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
         <label>Preset
           <select id="lut-preset">
@@ -140,7 +139,7 @@
           </select>
         </label>
         <label>Max Size <input id="prores-max" type="number" value="2048"/></label>
-        <label>Exposure <input id="prores-exp" type="number" step="0.1" value="0"/></label>
+        <!-- Exposure removed by request -->
         <label>TF <select id="prores-tf"><option value="g22" selected>g22</option><option value="g24">g24</option><option value="linear">linear</option></select></label>
         <label>Quality
           <select id="prores-quality">
