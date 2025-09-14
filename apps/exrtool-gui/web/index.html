@@ -68,6 +68,24 @@
       <canvas id="cv"></canvas>
       <div>
         <canvas id="hist" width="256" height="100"></canvas>
+        <canvas id="waveform" width="256" height="100"></canvas>
+        <div class="scope-controls">
+          <label>Channel
+            <select id="scope-channel">
+              <option value="rgb" selected>RGB</option>
+              <option value="r">R</option>
+              <option value="g">G</option>
+              <option value="b">B</option>
+            </select>
+          </label>
+          <label>Scale
+            <select id="scope-scale">
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+        </div>
         <div class="readout" id="readout">x: -, y: -, linear: -</div>
         <pre id="logbox" class="logbox"></pre>
         <div id="attrs">

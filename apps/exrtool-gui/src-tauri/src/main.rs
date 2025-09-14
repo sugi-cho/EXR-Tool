@@ -296,6 +296,26 @@ fn update_preview(
 }
 
 #[tauri::command]
+fn image_stats(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<ImageStats, String> {
+    let s = state.lock();
+    if let Some(ref preview) = s.preview {
+        Ok(compute_image_stats(preview, 256))
+    } else {
+        Err("no preview".into())
+    }
+}
+
+#[tauri::command]
+fn image_waveform(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<Waveform, String> {
+    let s = state.lock();
+    if let Some(ref preview) = s.preview {
+        Ok(compute_waveform(preview, 256, 256))
+    } else {
+        Err("no preview".into())
+    }
+}
+
+#[tauri::command]
 fn probe_pixel(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     px: u32,

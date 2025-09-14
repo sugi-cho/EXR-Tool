@@ -3,6 +3,10 @@
   let imgW = 0, imgH = 0;
   let useStateLutEnabled = false; // LUT in-memory 使用フラグ
   let pipetteFixed = false; // スポイト固定
+  let stats = null;
+  let waveform = null;
+  let scopeChannel = 'rgb';
+  let scopeScale = 1;
 
   // 簡易デバウンス
   function debounce(fn, ms) {
@@ -70,6 +74,73 @@
     return false;
   }
 
+  function drawHistogram(s) {
+    const cv = getEl('hist');
+    if (!cv || !s) return;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0,0,cv.width,cv.height);
+    const channels = scopeChannel === 'rgb' ? ['r','g','b'] : [scopeChannel];
+    const colors = { r:'red', g:'green', b:'blue' };
+    for (const ch of channels) {
+      const hist = s['hist_' + ch];
+      if (!hist) continue;
+      const max = Math.max(...hist) || 1;
+      ctx.strokeStyle = colors[ch];
+      ctx.beginPath();
+      hist.forEach((v,i)=>{
+        const h = Math.min(cv.height, (v/max)*cv.height*scopeScale);
+        ctx.moveTo(i, cv.height);
+        ctx.lineTo(i, cv.height - h);
+      });
+      ctx.stroke();
+    }
+  }
+
+  function drawWaveform(wf) {
+    const cv = getEl('waveform');
+    if (!cv || !wf) return;
+    const ctx = cv.getContext('2d');
+    const width = cv.width;
+    const height = cv.height;
+    ctx.clearRect(0,0,width,height);
+    const channels = scopeChannel === 'rgb' ? ['r','g','b'] : [scopeChannel];
+    const colors = { r:'red', g:'green', b:'blue' };
+    const xb = wf.x_bins;
+    const yb = wf.y_bins;
+    const sx = width / xb;
+    const sy = height / yb;
+    ctx.globalAlpha = 1;
+    for (const ch of channels) {
+      const arr = wf[ch];
+      if (!arr) continue;
+      ctx.fillStyle = colors[ch];
+      for (let x=0; x<xb; x++) {
+        for (let y=0; y<yb; y++) {
+          const c = arr[x*yb + y];
+          if (c>0) {
+            const alpha = Math.min(1, c * scopeScale / 10);
+            ctx.globalAlpha = alpha;
+            ctx.fillRect(x*sx, height - (y+1)*sy, sx, sy);
+          }
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  async function refreshScopes() {
+    try {
+      if (!(invoke || await ensureTauriReady())) return;
+      const [s, wf] = await Promise.all([
+        invoke('image_stats'),
+        invoke('image_waveform'),
+      ]);
+      stats = s; waveform = wf;
+      drawHistogram(stats);
+      drawWaveform(waveform);
+    } catch (e) { console.error('refreshScopes failed', e); }
+  }
+
   async function openExr() {
     const pathEl = getEl('path');
     const lutEl = getEl('lut');
@@ -106,12 +177,10 @@
         ctx.drawImage(img, 0, 0);
         info.textContent = `preview: ${w}x${h}`;
         appendLog(`open ok: ${w}x${h}`);
-        if (typeof drawHistogram === 'function' && typeof stats !== 'undefined') {
-          drawHistogram(stats);
-        }
       };
       img.src = 'data:image/png;base64,' + b64;
       await loadMetadata(path);
+      await refreshScopes();
     } catch (e) {
       if (String(e).includes('cancelled')) {
         appendLog('読み込みキャンセル');
@@ -204,8 +273,20 @@
     const progThreshEl = getEl('progress-threshold');
     const logConsentEl = getEl('log-consent');
     attrTable = getEl('attr-table');
+    const scopeChannelEl = getEl('scope-channel');
+    const scopeScaleEl = getEl('scope-scale');
 
     useStateLutEnabled = !!useStateLut?.checked;
+    scopeChannelEl?.addEventListener('change', () => {
+      scopeChannel = scopeChannelEl.value;
+      drawHistogram(stats);
+      drawWaveform(waveform);
+    });
+    scopeScaleEl?.addEventListener('change', () => {
+      scopeScale = parseInt(scopeScaleEl.value)||1;
+      drawHistogram(stats);
+      drawWaveform(waveform);
+    });
 
     if (openBtn) openBtn.addEventListener('click', openExr);
 
@@ -348,11 +429,9 @@
           ctx.clearRect(0, 0, w, h);
           ctx.drawImage(img, 0, 0);
           if (info) info.textContent = `preview: ${w}x${h}`;
-          if (typeof drawHistogram === 'function' && typeof stats !== 'undefined') {
-            drawHistogram(stats);
-          }
         };
         img.src = 'data:image/png;base64,' + b64;
+        await refreshScopes();
         showError('');
       } catch (e) {
         appendLog('update失敗: ' + e);
