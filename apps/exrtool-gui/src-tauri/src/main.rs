@@ -590,6 +590,12 @@ fn set_log_permission(
     Ok(())
 }
 
+#[tauri::command]
+fn write_log(s: String) -> Result<(), String> {
+    log_append(&s);
+    Ok(())
+}
+
 // --- Video / Sequence commands ---
 #[tauri::command]
 fn seq_fps(
@@ -723,7 +729,8 @@ fn main() {
             make_lut,
             make_lut3d,
             seq_fps,
-            export_prores
+            export_prores,
+            write_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

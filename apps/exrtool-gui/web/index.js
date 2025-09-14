@@ -30,6 +30,12 @@
     console.log(line);
   }
 
+  // UI + ファイル両方へログ（可能なら）
+  async function logBoth(msg) {
+    appendLog(msg);
+    try { if (invoke || await ensureTauriReady()) { await invoke('write_log', { s: msg }); } } catch (_) {}
+  }
+
   function showError(msg) {
     let el = document.getElementById('errordiv');
     if (!el) {
@@ -437,15 +443,18 @@
 
     // Folder browse (EXR sequence)
     if (browseSeqBtn) browseSeqBtn.addEventListener('click', async () => {
+      await logBoth('browse-seq clicked');
       try {
         if (!(await ensureTauriReady())) return;
         const t = window.__TAURI__;
-        const dialogOpen = t && t.dialog && t.dialog.open ? t.dialog.open : null;
+        const dialogOpen = (t && t.dialog && t.dialog.open) || (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open) || null;
         if (dialogOpen) {
           const selected = await dialogOpen({ multiple: false, directory: true, defaultPath: seqDirEl?.value || undefined });
           if (selected && seqDirEl) seqDirEl.value = Array.isArray(selected) ? selected[0] : selected;
+          await logBoth(`フォルダ選択: ${seqDirEl?.value || ''}`);
         } else {
           const p = prompt('EXR連番フォルダのパスを入力'); if (p && seqDirEl) seqDirEl.value = p;
+          await logBoth(`フォルダ入力: ${seqDirEl?.value || ''}`);
         }
       } catch (e) { appendLog('フォルダダイアログ失敗: ' + e); }
     });
@@ -460,23 +469,27 @@
         const attr = (seqAttrEl?.value || 'FramesPerSecond');
         const recursive = !!seqRecursiveEl?.checked;
         const dryRun = !!seqDryRunEl?.checked;
+        await logBoth(`seq_fps 実行: dir=${dir} fps=${fps} attr=${attr} recursive=${recursive} dryRun=${dryRun}`);
         const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-        appendLog(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
+        await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
         if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
       } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
     });
 
     // ProRes output browse
     if (browseProresOutBtn) browseProresOutBtn.addEventListener('click', async () => {
+      await logBoth('browse-prores-out clicked');
       try {
         if (!(await ensureTauriReady())) return;
         const t = window.__TAURI__;
-        const saveDlg = t && t.dialog && t.dialog.save ? t.dialog.save : null;
+        const saveDlg = (t && t.dialog && t.dialog.save) || (t && t.tauri && t.tauri.dialog && t.tauri.dialog.save) || null;
         if (saveDlg) {
           const sel = await saveDlg({ filters: [{ name: 'ProRes MOV', extensions: ['mov'] }], defaultPath: proresOutEl?.value || undefined });
           if (sel && proresOutEl) proresOutEl.value = sel;
+          await logBoth(`出力選択: ${proresOutEl?.value || ''}`);
         } else {
           const p = prompt('出力MOVのパスを入力 (.mov)'); if (p && proresOutEl) proresOutEl.value = p;
+          await logBoth(`出力入力: ${proresOutEl?.value || ''}`);
         }
       } catch (e) { appendLog('出力選択失敗: ' + e); }
     });
@@ -496,6 +509,7 @@
         const exposure = parseFloat(proresExpEl?.value ?? '0') || 0;
         const gamma = parseFloat(proresGammaEl?.value ?? '2.2') || 2.2;
         const quality = (proresQualityEl?.value || 'High');
+        await logBoth(`export_prores: dir=${dir} out=${out} fps=${fps} cs=${colorspace} profile=${profile}`);
 
         // listen progress
         const t = window.__TAURI__;
