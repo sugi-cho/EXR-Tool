@@ -15,6 +15,7 @@ use base64::Engine;
 use exrtool_core::{
     export_png,
     generate_preview,
+    load_exr_basic,
     parse_cube,
     LoadedExr,
     Lut,
@@ -120,7 +121,7 @@ async fn open_exr(
         log_append(&format!("open_exr: load failed: {}", e));
         e.to_string()
     })?;
-    if let Some(p) = lut_path {
+    if let Some(ref p) = lut_path {
         match std::fs::read_to_string(&p) {
             Ok(t) => match parse_cube(&t) {
                 Ok(lut) => { state.lock().lut = Some(lut); },
@@ -132,6 +133,13 @@ async fn open_exr(
 
     prog.cancel.store(false, Ordering::SeqCst);
     let s_lut = state.lock().lut.clone();
+    if s_lut.is_some() {
+        log_append("open_exr: using in-memory LUT");
+    } else if lut_path.is_some() {
+        log_append("open_exr: using external LUT path");
+    } else {
+        log_append("open_exr: no LUT");
+    }
     let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
     let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref(), pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
@@ -174,8 +182,8 @@ fn update_preview(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
-    tone_map: String,
-    tone_map_order: String,
+    tone_map: Option<String>,
+    tone_map_order: Option<String>,
     use_state_lut: bool,
     high_quality: bool,
 ) -> Result<(u32, u32, String), String> {
@@ -212,6 +220,11 @@ fn update_preview(
         }
     };
     let lut_ref = if use_state_lut { s.lut.as_ref() } else { lut_from_file.as_ref() };
+    if use_state_lut {
+        log_append(&format!("update_preview: use_state_lut={}, has_state_lut={}", use_state_lut, s.lut.is_some()));
+    } else {
+        log_append(&format!("update_preview: use_file_lut, file_lut_present={}", lut_from_file.is_some()));
+    }
     let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
     let preview = generate_preview(img, max_size, exposure, gamma, lut_ref, pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
@@ -577,6 +590,111 @@ fn set_log_permission(
     Ok(())
 }
 
+// --- Video / Sequence commands ---
+#[tauri::command]
+fn seq_fps(
+    dir: String,
+    fps: f32,
+    attr: Option<String>,
+    recursive: bool,
+    dry_run: bool,
+    _backup: bool,
+) -> Result<usize, String> {
+    #[cfg(feature = "exr_pure")]
+    {
+        use std::{collections::HashMap, path::PathBuf};
+        fn collect(dir: &PathBuf, recursive: bool, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+            for entry in std::fs::read_dir(dir)? {
+                let e = entry?; let p = e.path();
+                if p.is_dir() { if recursive { collect(&p, recursive, out)?; } }
+                else if p.extension().map(|s| s.to_string_lossy().to_ascii_lowercase()) == Some("exr".into()) { out.push(p); }
+            }
+            Ok(())
+        }
+        let mut files = Vec::new();
+        let d = PathBuf::from(dir);
+        collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
+        files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
+        if dry_run { return Ok(files.len()); }
+        let mut map = HashMap::new();
+        map.insert(attr.unwrap_or_else(|| "FramesPerSecond".into()), format!("{}", fps));
+        let mut ok = 0usize;
+        for f in files {
+            match exrtool_core::metadata::write_metadata(&f, &map, None) {
+                Ok(_) => ok += 1,
+                Err(e) => log_append(&format!("seq_fps failed {}: {}", f.display(), e)),
+            }
+        }
+        Ok(ok)
+    }
+    #[cfg(not(feature = "exr_pure"))]
+    {
+        Err("This build does not include EXR metadata support. Rebuild with feature exr_pure.".into())
+    }
+}
+
+#[tauri::command]
+fn export_prores(
+    dir: String,
+    fps: f32,
+    colorspace: String,
+    out: String,
+    profile: String,
+    max_size: u32,
+    exposure: f32,
+    gamma: f32,
+    quality: String,
+    window: tauri::Window,
+) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    if Command::new("ffmpeg").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
+        return Err("ffmpeg not found. Please install ffmpeg and ensure it's on PATH.".into());
+    }
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+        let e = entry.map_err(|e| e.to_string())?; let p = e.path();
+        if p.is_file() && p.extension().map(|s| s.to_string_lossy().to_ascii_lowercase())==Some("exr".into()) { files.push(p); }
+    }
+    files.sort_by(|a,b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
+    if files.is_empty() { return Err("no EXR files found".into()); }
+    // LUT
+    let mut lut_obj = None;
+    let cs = colorspace.to_lowercase();
+    if cs != "linear:srgb" {
+        use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+        let (sp, dp) = if cs=="acescg:srgb" { (Primaries::ACEScgD60, Primaries::SrgbD65) } else if cs=="aces2065:srgb" { (Primaries::ACES2065_1D60, Primaries::SrgbD65) } else { (Primaries::SrgbD65, Primaries::SrgbD65) };
+        let text = make_3d_lut_cube(sp, TransferFn::Linear, dp, TransferFn::Srgb, 33, 1024);
+        lut_obj = Some(parse_cube(&text).map_err(|e| e.to_string())?);
+    }
+    // spawn ffmpeg
+    let mut child = Command::new("ffmpeg")
+        .arg("-y").arg("-f").arg("image2pipe").arg("-r").arg(format!("{}", fps))
+        .arg("-vcodec").arg("png").arg("-i").arg("-")
+        .arg("-c:v").arg("prores_ks").arg("-profile:v").arg(match profile.as_str() { "422hq"=>"3", "422"=>"2", "4444"=>"4", _=>"3" })
+        .arg(out)
+        .stdin(Stdio::piped())
+        .spawn().map_err(|e| e.to_string())?;
+    {
+        use image::ImageOutputFormat;
+        use std::io::Write;
+        let mut stdin = child.stdin.take().ok_or("failed to open ffmpeg stdin")?;
+        let total = files.len() as f64;
+        for (i, f) in files.iter().enumerate() {
+            let img = load_exr_basic(f).map_err(|e| e.to_string())?;
+            let pq = if quality.to_lowercase()=="high" { PreviewQuality::High } else { PreviewQuality::Fast };
+            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
+            let buf = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8).ok_or("invalid buffer")?;
+            let mut bytes: Vec<u8> = Vec::new();
+            image::DynamicImage::ImageRgba8(buf).write_to(&mut std::io::Cursor::new(&mut bytes), ImageOutputFormat::Png).map_err(|e| e.to_string())?;
+            stdin.write_all(&bytes).map_err(|e| e.to_string())?;
+            let _ = window.emit("video-progress", ((i as f64 + 1.0)/total*100.0) as f64);
+        }
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if !status.success() { return Err(format!("ffmpeg exited with {:?}", status)); }
+    Ok(())
+}
+
 fn main() {
     let preset_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../config/luts.presets.json");
@@ -601,7 +719,11 @@ fn main() {
             set_lut_3d,
             clear_lut,
             lut_presets,
-            read_metadata
+            read_metadata,
+            make_lut,
+            make_lut3d,
+            seq_fps,
+            export_prores
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
