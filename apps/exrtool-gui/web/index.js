@@ -157,11 +157,12 @@
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
       const [w, h, b64] = await invoke('open_exr', {
         path,
-        maxSize: [REDACTED],
+        // 最大プレビュー解像度（既定）
+        max_size: 2048,
         exposure: 0,
         gamma: 1.0,
-        lutPath,
-        highQuality: !!(hqEl?.checked)
+        lut_path: lutPath,
+        high_quality: !!(hqEl?.checked)
       });
       const img = new Image();
       img.onload = () => {
@@ -462,12 +463,12 @@
         if (!(await ensureTauriReady())) return;
         const hqEl = getEl('hq');
         const [w,h,b64] = await invoke('update_preview', {
-          maxSize: [REDACTED],
+          max_size: 2048,
           exposure: 0,
           gamma: 1.0,
-          lutPath: null,
-          useStateLut: useStateLutEnabled,
-          highQuality: !!(hqEl?.checked)
+          lut_path: null,
+          use_state_lut: useStateLutEnabled,
+          high_quality: !!(hqEl?.checked)
         });
         const img = new Image();
         const info = getEl('info');

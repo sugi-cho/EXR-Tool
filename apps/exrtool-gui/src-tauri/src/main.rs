@@ -111,11 +111,13 @@ struct AppConfig {
     send_logs: bool,
     progress_interval_ms: u64,
     progress_pct_threshold: f64,
+    #[serde(default)]
+    default_transform: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
-        Self { send_logs: false, progress_interval_ms: 100, progress_pct_threshold: 0.5 }
+        Self { send_logs: false, progress_interval_ms: 100, progress_pct_threshold: 0.5, default_transform: String::new() }
     }
 }
 
@@ -871,6 +873,20 @@ fn set_progress_config(
     Ok(())
 }
 
+#[tauri::command]
+fn get_default_transform(cfg: tauri::State<Arc<Mutex<AppConfig>>>) -> Result<String, String> {
+    Ok(cfg.lock().default_transform.clone())
+}
+
+#[tauri::command]
+fn set_default_transform(cfg: tauri::State<Arc<Mutex<AppConfig>>>, label: String) -> Result<(), String> {
+    {
+        let mut c = cfg.lock();
+        c.default_transform = label;
+        save_config(&c)?;
+    }
+    Ok(())
+}
 // --- Video / Sequence commands ---
 #[derive(Serialize)]
 struct SeqSummary {
@@ -1140,6 +1156,8 @@ fn main() {
             open_exr,
             update_preview,
             transform_presets,
+            get_default_transform,
+            set_default_transform,
             image_stats,
             image_waveform,
             probe_pixel,

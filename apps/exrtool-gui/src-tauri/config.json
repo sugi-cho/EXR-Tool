@@ -1,5 +1,1 @@
-{
-  "send_logs": false,
-  "progress_interval_ms": 100,
-  "progress_pct_threshold": 0.5
-}
+{"send_logs":false,"progress_interval_ms":100,"progress_pct_threshold":0.5,"default_transform":"Linear to ACES2065-1"}
