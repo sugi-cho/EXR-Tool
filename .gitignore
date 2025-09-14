@@ -11,6 +11,7 @@ apps/exrtool-gui/web/.vite/
 
 # Local preview artifacts
 apps/exrtool-gui/src-tauri/preview.png
+*/preview.png
 
 # VSCode
 .vscode/
