@@ -143,9 +143,7 @@
 
   async function openExr() {
     const pathEl = getEl('path');
-    const lutEl = getEl('lut');
     const ocioEl = getEl('ocio');
-    const maxEl = getEl('max');
     // Exposure slider removed
     const hqEl = getEl('hq');
     const cv = getEl('cv');
@@ -154,7 +152,7 @@
     const ctx = cv.getContext('2d');
 
     const path = pathEl.value.trim();
-    const lutPath = (!useStateLutEnabled && lutEl) ? (lutEl.value.trim() || null) : null;
+    const lutPath = null; // 外部LUT読込は廃止
     try {
       if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
       const t = window.__TAURI__;
@@ -162,7 +160,7 @@
       if (listen) { unlisten = await listen('open-progress', e => { progEl.value = e.payload; }); }
       const [w, h, b64] = await invoke('open_exr', {
         path,
-        maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
+        maxSize: [REDACTED],
         exposure: 0,
         gamma: 1.0,
         lutPath,
