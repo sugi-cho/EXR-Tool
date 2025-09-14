@@ -735,6 +735,11 @@ fn set_progress_config(
 }
 
 // --- Video / Sequence commands ---
+#[derive(Serialize)]
+struct SeqSummary {
+    success: usize,
+    failure: usize,
+}
 #[tauri::command]
 async fn seq_fps(
     window: tauri::Window,
@@ -745,7 +750,7 @@ async fn seq_fps(
     recursive: bool,
     dry_run: bool,
     backup: bool,
-) -> Result<usize, String> {
+) -> Result<SeqSummary, String> {
     #[cfg(feature = "exr_pure")]
     {
         use std::{collections::HashMap, path::PathBuf};
@@ -784,7 +789,7 @@ async fn seq_fps(
             let _ = window_clone.emit("seq-progress", 0.0);
             if dry_run {
                 let _ = window_clone.emit("seq-progress", 100.0);
-                return Ok(files.len());
+                return Ok(SeqSummary { success: total_files, failure: 0 });
             }
             let mut map = HashMap::new();
             map.insert(
