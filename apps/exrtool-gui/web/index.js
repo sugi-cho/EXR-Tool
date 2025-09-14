@@ -3,6 +3,10 @@
   let imgW = 0, imgH = 0;
   let useStateLutEnabled = false; // LUT in-memory 使用フラグ
   let pipetteFixed = false; // スポイト固定
+  let stats = null;
+  let waveform = null;
+  let scopeChannel = 'rgb';
+  let scopeScale = 1;
 
   // 簡易デバウンス
   function debounce(fn, ms) {
@@ -36,6 +40,15 @@
     try { if (invoke || await ensureTauriReady()) { await invoke('write_log', { s: msg }); } } catch (_) {}
   }
 
+  async function showSeqSummary(success, failure, dryRun) {
+    const total = success + failure;
+    const msg = dryRun
+      ? `対象ファイル: ${total}`
+      : `連番処理完了: 成功 ${success} 件 / 失敗 ${failure} 件 (全${total}件)`;
+    await logBoth(`seq_fps result: success=${success} failure=${failure} total=${total}${dryRun ? ' (dry-run)' : ''}`);
+    alert(msg);
+  }
+
   function showError(msg) {
     let el = document.getElementById('errordiv');
     if (!el) {
@@ -59,6 +72,73 @@
     }
     appendLog('Tauri API 解決に失敗');
     return false;
+  }
+
+  function drawHistogram(s) {
+    const cv = getEl('hist');
+    if (!cv || !s) return;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0,0,cv.width,cv.height);
+    const channels = scopeChannel === 'rgb' ? ['r','g','b'] : [scopeChannel];
+    const colors = { r:'red', g:'green', b:'blue' };
+    for (const ch of channels) {
+      const hist = s['hist_' + ch];
+      if (!hist) continue;
+      const max = Math.max(...hist) || 1;
+      ctx.strokeStyle = colors[ch];
+      ctx.beginPath();
+      hist.forEach((v,i)=>{
+        const h = Math.min(cv.height, (v/max)*cv.height*scopeScale);
+        ctx.moveTo(i, cv.height);
+        ctx.lineTo(i, cv.height - h);
+      });
+      ctx.stroke();
+    }
+  }
+
+  function drawWaveform(wf) {
+    const cv = getEl('waveform');
+    if (!cv || !wf) return;
+    const ctx = cv.getContext('2d');
+    const width = cv.width;
+    const height = cv.height;
+    ctx.clearRect(0,0,width,height);
+    const channels = scopeChannel === 'rgb' ? ['r','g','b'] : [scopeChannel];
+    const colors = { r:'red', g:'green', b:'blue' };
+    const xb = wf.x_bins;
+    const yb = wf.y_bins;
+    const sx = width / xb;
+    const sy = height / yb;
+    ctx.globalAlpha = 1;
+    for (const ch of channels) {
+      const arr = wf[ch];
+      if (!arr) continue;
+      ctx.fillStyle = colors[ch];
+      for (let x=0; x<xb; x++) {
+        for (let y=0; y<yb; y++) {
+          const c = arr[x*yb + y];
+          if (c>0) {
+            const alpha = Math.min(1, c * scopeScale / 10);
+            ctx.globalAlpha = alpha;
+            ctx.fillRect(x*sx, height - (y+1)*sy, sx, sy);
+          }
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  async function refreshScopes() {
+    try {
+      if (!(invoke || await ensureTauriReady())) return;
+      const [s, wf] = await Promise.all([
+        invoke('image_stats'),
+        invoke('image_waveform'),
+      ]);
+      stats = s; waveform = wf;
+      drawHistogram(stats);
+      drawWaveform(waveform);
+    } catch (e) { console.error('refreshScopes failed', e); }
   }
 
   async function openExr() {
@@ -97,12 +177,10 @@
         ctx.drawImage(img, 0, 0);
         info.textContent = `preview: ${w}x${h}`;
         appendLog(`open ok: ${w}x${h}`);
-        if (typeof drawHistogram === 'function' && typeof stats !== 'undefined') {
-          drawHistogram(stats);
-        }
       };
       img.src = 'data:image/png;base64,' + b64;
       await loadMetadata(path);
+      await refreshScopes();
     } catch (e) {
       if (String(e).includes('cancelled')) {
         appendLog('読み込みキャンセル');
@@ -154,20 +232,22 @@
     // Tabs
     const tabBtnPreview = document.getElementById('tab-btn-preview');
     const tabBtnVideo = document.getElementById('tab-btn-video');
+    const tabBtnSettings = document.getElementById('tab-btn-settings');
     const tabPreview = document.getElementById('tab-preview');
     const tabVideo = document.getElementById('tab-video');
+    const tabSettings = document.getElementById('tab-settings');
     function activate(tab){
-      if (!tabPreview || !tabVideo) return;
-      if (tab === 'video') {
-        tabPreview.style.display = 'none'; tabVideo.style.display = 'block';
-        tabBtnVideo?.classList.add('active'); tabBtnPreview?.classList.remove('active');
-      } else {
-        tabPreview.style.display = 'block'; tabVideo.style.display = 'none';
-        tabBtnPreview?.classList.add('active'); tabBtnVideo?.classList.remove('active');
-      }
+      if (!tabPreview || !tabVideo || !tabSettings) return;
+      tabPreview.style.display = (tab === 'preview') ? 'block' : 'none';
+      tabVideo.style.display = (tab === 'video') ? 'block' : 'none';
+      tabSettings.style.display = (tab === 'settings') ? 'block' : 'none';
+      tabBtnPreview?.classList.toggle('active', tab === 'preview');
+      tabBtnVideo?.classList.toggle('active', tab === 'video');
+      tabBtnSettings?.classList.toggle('active', tab === 'settings');
     }
     tabBtnPreview?.addEventListener('click', ()=>{ logBoth('tab: preview'); activate('preview'); });
     tabBtnVideo?.addEventListener('click', ()=>{ logBoth('tab: video'); activate('video'); });
+    tabBtnSettings?.addEventListener('click', ()=>{ logBoth('tab: settings'); activate('settings'); });
     logBoth('boot: video controls present? browse-seq=' + (!!document.getElementById('browse-seq')) + ', browse-prores-out=' + (!!document.getElementById('browse-prores-out')));
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
@@ -189,11 +269,53 @@
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
     const addAttrBtn = getEl('add-attr');
+    const progIntervalEl = getEl('progress-interval');
+    const progThreshEl = getEl('progress-threshold');
+    const logConsentEl = getEl('log-consent');
     attrTable = getEl('attr-table');
+    const scopeChannelEl = getEl('scope-channel');
+    const scopeScaleEl = getEl('scope-scale');
 
     useStateLutEnabled = !!useStateLut?.checked;
+    scopeChannelEl?.addEventListener('change', () => {
+      scopeChannel = scopeChannelEl.value;
+      drawHistogram(stats);
+      drawWaveform(waveform);
+    });
+    scopeScaleEl?.addEventListener('change', () => {
+      scopeScale = parseInt(scopeScaleEl.value)||1;
+      drawHistogram(stats);
+      drawWaveform(waveform);
+    });
 
     if (openBtn) openBtn.addEventListener('click', openExr);
+
+    // load config
+    (async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const [ms, pct] = await invoke('get_progress_config');
+        if (progIntervalEl) progIntervalEl.value = ms;
+        if (progThreshEl) progThreshEl.value = pct;
+        const allow = await invoke('get_log_permission');
+        if (logConsentEl) logConsentEl.checked = allow;
+      } catch (_) {}
+    })();
+
+    logConsentEl?.addEventListener('change', async () => {
+      try { if (invoke || await ensureTauriReady()) { await invoke('set_log_permission', { allow: !!logConsentEl.checked }); } } catch (_) {}
+    });
+
+    const saveProgress = debounce(async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const ms = parseInt(progIntervalEl?.value ?? '100', 10) || 0;
+        const pct = parseFloat(progThreshEl?.value ?? '0.5') || 0;
+        await invoke('set_progress_config', { intervalMs: ms, pctThreshold: pct });
+      } catch (_) {}
+    }, 500);
+    progIntervalEl?.addEventListener('input', saveProgress);
+    progThreshEl?.addEventListener('input', saveProgress);
 
     if (browseBtn) browseBtn.addEventListener('click', async () => {
       try {
@@ -307,11 +429,9 @@
           ctx.clearRect(0, 0, w, h);
           ctx.drawImage(img, 0, 0);
           if (info) info.textContent = `preview: ${w}x${h}`;
-          if (typeof drawHistogram === 'function' && typeof stats !== 'undefined') {
-            drawHistogram(stats);
-          }
         };
         img.src = 'data:image/png;base64,' + b64;
+        await refreshScopes();
         showError('');
       } catch (e) {
         appendLog('update失敗: ' + e);
@@ -568,9 +688,8 @@
             if (cancelFpsBtn) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
           }
         } else {
-          const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-          await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
-          if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
+          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+          await showSeqSummary(res.success, res.failure, dryRun);
         }
       } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
     });

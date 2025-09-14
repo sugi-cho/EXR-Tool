@@ -91,13 +91,17 @@ impl Default for SeqFpsProgress {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct AppConfig {
     send_logs: bool,
-    #[cfg(feature = "use_ocio")]
-    display: Option<String>,
-    #[cfg(feature = "use_ocio")]
-    view: Option<String>,
+    progress_interval_ms: u64,
+    progress_pct_threshold: f64,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self { send_logs: false, progress_interval_ms: 100, progress_pct_threshold: 0.5 }
+    }
 }
 
 fn config_path() -> PathBuf {
@@ -105,22 +109,10 @@ fn config_path() -> PathBuf {
 }
 
 fn load_config() -> AppConfig {
-    match std::fs::read_to_string(config_path()) {
-        Ok(t) => serde_json::from_str(&t).unwrap_or(AppConfig {
-            send_logs: false,
-            #[cfg(feature = "use_ocio")]
-            display: None,
-            #[cfg(feature = "use_ocio")]
-            view: None,
-        }),
-        Err(_) => AppConfig {
-            send_logs: false,
-            #[cfg(feature = "use_ocio")]
-            display: None,
-            #[cfg(feature = "use_ocio")]
-            view: None,
-        },
-    }
+    std::fs::read_to_string(config_path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
 }
 
 fn save_config(cfg: &AppConfig) -> Result<(), String> {
@@ -322,6 +314,26 @@ fn update_preview(
 }
 
 #[tauri::command]
+fn image_stats(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<ImageStats, String> {
+    let s = state.lock();
+    if let Some(ref preview) = s.preview {
+        Ok(compute_image_stats(preview, 256))
+    } else {
+        Err("no preview".into())
+    }
+}
+
+#[tauri::command]
+fn image_waveform(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<Waveform, String> {
+    let s = state.lock();
+    if let Some(ref preview) = s.preview {
+        Ok(compute_waveform(preview, 256, 256))
+    } else {
+        Err("no preview".into())
+    }
+}
+
+#[tauri::command]
 fn probe_pixel(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     px: u32,
@@ -412,7 +424,10 @@ fn generate_preview_progress(
     lut: Option<&Lut>,
     window: &tauri::Window,
     prog: &OpenProgress,
+    interval_ms: u64,
+    pct_threshold: f64,
 ) -> Result<PreviewImage, String> {
+    use std::time::{Duration, Instant};
     let (w, h) = (img.width as u32, img.height as u32);
     let scale = if w <= max_size && h <= max_size {
         1.0
@@ -424,6 +439,8 @@ fn generate_preview_progress(
 
     let mut rgba8 = vec![0u8; (out_w * out_h * 4) as usize];
     let _ = window.emit("open-progress", 0.0);
+    let mut last_emit = Instant::now();
+    let mut last_pct: f64 = 0.0;
 
     for oy in 0..out_h {
         for ox in 0..out_w {
@@ -489,7 +506,14 @@ fn generate_preview_progress(
             rgba8[di + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
         }
         let pct = ((oy + 1) as f64 / out_h as f64) * 100.0;
-        let _ = window.emit("open-progress", pct);
+        if pct - last_pct >= pct_threshold
+            || last_emit.elapsed() >= Duration::from_millis(interval_ms)
+            || (oy + 1) == out_h
+        {
+            let _ = window.emit("open-progress", pct);
+            last_pct = pct;
+            last_emit = Instant::now();
+        }
         if prog.cancel.load(Ordering::SeqCst) {
             return Err("cancelled".to_string());
         }
@@ -706,15 +730,18 @@ fn get_log_permission(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<bool,
 #[tauri::command]
 fn set_log_permission(
     state: tauri::State<Arc<Mutex<AppState>>>,
+    cfg: tauri::State<Arc<Mutex<AppConfig>>>,
     allow: bool,
 ) -> Result<(), String> {
     {
         let mut s = state.lock();
         s.allow_send = allow;
     }
-    let mut cfg = load_config();
-    cfg.send_logs = allow;
-    save_config(&cfg)?;
+    {
+        let mut c = cfg.lock();
+        c.send_logs = allow;
+        save_config(&c)?;
+    }
     Ok(())
 }
 
@@ -724,64 +751,33 @@ fn write_log(s: String) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "use_ocio")]
 #[tauri::command]
-fn ocio_displays(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<Vec<String>, String> {
-    let mut s = state.lock();
-    if s.ocio_cfg.is_none() {
-        let path = std::env::var("OCIO").map_err(|_| "OCIO env not set".to_string())?;
-        s.ocio_cfg = Some(OcioConfig::from_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?);
-    }
-    Ok(s.ocio_cfg.as_ref().unwrap().displays())
+fn get_progress_config(cfg: tauri::State<Arc<Mutex<AppConfig>>>) -> Result<(u64, f64), String> {
+    let c = cfg.lock();
+    Ok((c.progress_interval_ms, c.progress_pct_threshold))
 }
 
-#[cfg(feature = "use_ocio")]
 #[tauri::command]
-fn ocio_views(state: tauri::State<Arc<Mutex<AppState>>>, display: String) -> Result<Vec<String>, String> {
-    let mut s = state.lock();
-    if s.ocio_cfg.is_none() {
-        let path = std::env::var("OCIO").map_err(|_| "OCIO env not set".to_string())?;
-        s.ocio_cfg = Some(OcioConfig::from_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?);
-    }
-    Ok(s.ocio_cfg.as_ref().unwrap().views(&display))
-}
-
-#[cfg(feature = "use_ocio")]
-#[tauri::command]
-fn set_ocio_display_view(
-    state: tauri::State<Arc<Mutex<AppState>>>,
-    display: String,
-    view: String,
+fn set_progress_config(
+    cfg: tauri::State<Arc<Mutex<AppConfig>>>,
+    interval_ms: u64,
+    pct_threshold: f64,
 ) -> Result<(), String> {
-    let mut s = state.lock();
-    if s.ocio_cfg.is_none() {
-        let path = std::env::var("OCIO").map_err(|_| "OCIO env not set".to_string())?;
-        s.ocio_cfg = Some(OcioConfig::from_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?);
+    {
+        let mut c = cfg.lock();
+        c.progress_interval_ms = interval_ms;
+        c.progress_pct_threshold = pct_threshold;
+        save_config(&c)?;
     }
-    let proc = s
-        .ocio_cfg
-        .as_ref()
-        .unwrap()
-        .processor_display_view(&display, &view)
-        .map_err(|e| e.to_string())?;
-    s.ocio_proc = Some(proc);
-    s.ocio_display = Some(display.clone());
-    s.ocio_view = Some(view.clone());
-    let mut cfg = load_config();
-    cfg.display = Some(display);
-    cfg.view = Some(view);
-    save_config(&cfg)?;
     Ok(())
 }
 
-#[cfg(feature = "use_ocio")]
-#[tauri::command]
-fn ocio_selection(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(Option<String>, Option<String>), String> {
-    let s = state.lock();
-    Ok((s.ocio_display.clone(), s.ocio_view.clone()))
-}
-
 // --- Video / Sequence commands ---
+#[derive(Serialize)]
+struct SeqSummary {
+    success: usize,
+    failure: usize,
+}
 #[tauri::command]
 async fn seq_fps(
     window: tauri::Window,
@@ -792,7 +788,7 @@ async fn seq_fps(
     recursive: bool,
     dry_run: bool,
     backup: bool,
-) -> Result<usize, String> {
+) -> Result<SeqSummary, String> {
     #[cfg(feature = "exr_pure")]
     {
         use std::{collections::HashMap, path::PathBuf};
@@ -831,7 +827,7 @@ async fn seq_fps(
             let _ = window_clone.emit("seq-progress", 0.0);
             if dry_run {
                 let _ = window_clone.emit("seq-progress", 100.0);
-                return Ok(files.len());
+                return Ok(SeqSummary { success: total_files, failure: 0 });
             }
             let mut map = HashMap::new();
             map.insert(
@@ -841,7 +837,11 @@ async fn seq_fps(
             let mut ok = 0usize;
             let mut baks: Vec<PathBuf> = Vec::new();
             let mut last_emit = Instant::now();
-            let mut last_pct: f64 = -1.0;
+            let cfg_lock = cfg.lock();
+            let interval_ms = cfg_lock.progress_interval_ms;
+            let pct_threshold = cfg_lock.progress_pct_threshold;
+            drop(cfg_lock);
+            let mut last_pct: f64 = 0.0;
             for (i, f) in files.iter().enumerate() {
                 if prog.cancel.load(Ordering::SeqCst) {
                     for b in baks { let _ = std::fs::remove_file(&b); }
@@ -902,6 +902,8 @@ async fn seq_fps(
 
 #[tauri::command]
 fn export_prores(
+    window: tauri::Window,
+    cfg: tauri::State<'_, Arc<Mutex<AppConfig>>>,
     dir: String,
     fps: f32,
     colorspace: String,
@@ -911,7 +913,6 @@ fn export_prores(
     exposure: f32,
     gamma: f32,
     quality: String,
-    window: tauri::Window,
 ) -> Result<(), String> {
     use std::process::{Command, Stdio};
     if Command::new("ffmpeg")
@@ -981,8 +982,16 @@ fn export_prores(
     {
         use image::ImageOutputFormat;
         use std::io::Write;
+        use std::time::{Duration, Instant};
         let mut stdin = child.stdin.take().ok_or("failed to open ffmpeg stdin")?;
         let total = files.len() as f64;
+        let cfg_lock = cfg.lock();
+        let interval_ms = cfg_lock.progress_interval_ms;
+        let pct_threshold = cfg_lock.progress_pct_threshold;
+        drop(cfg_lock);
+        let mut last_emit = Instant::now();
+        let mut last_pct: f64 = 0.0;
+        let _ = window.emit("video-progress", 0.0);
         for (i, f) in files.iter().enumerate() {
             let img = load_exr_basic(f).map_err(|e| e.to_string())?;
             let pq = if quality.to_lowercase() == "high" {
@@ -1019,27 +1028,12 @@ fn main() {
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default();
 
-    let mut init_state = AppState::default();
     let cfg = load_config();
-    init_state.allow_send = cfg.send_logs;
-    #[cfg(feature = "use_ocio")]
-    {
-        if let (Some(d), Some(v)) = (cfg.display.clone(), cfg.view.clone()) {
-            if let Ok(p) = std::env::var("OCIO") {
-                if let Ok(c) = OcioConfig::from_file(std::path::Path::new(&p)) {
-                    if let Ok(proc) = c.processor_display_view(&d, &v) {
-                        init_state.ocio_cfg = Some(c);
-                        init_state.ocio_proc = Some(proc);
-                        init_state.ocio_display = Some(d);
-                        init_state.ocio_view = Some(v);
-                    }
-                }
-            }
-        }
-    }
+    let app_state = AppState { allow_send: cfg.send_logs, ..Default::default() };
+    let cfg_state = Arc::new(Mutex::new(cfg));
 
     tauri::Builder::default()
-        .manage(Arc::new(Mutex::new(init_state)))
+        .manage(Arc::new(Mutex::new(app_state)))
         .manage(Arc::new(OpenProgress::default()))
         .manage(Arc::new(SeqFpsProgress::default()))
         .manage(PresetState { presets })
@@ -1059,15 +1053,13 @@ fn main() {
             read_metadata,
             make_lut,
             make_lut3d,
+            set_log_permission,
+            get_log_permission,
+            get_progress_config,
+            set_progress_config,
+            write_log,
             seq_fps,
             export_prores,
-            write_log,
-            get_log_permission,
-            set_log_permission,
-            #[cfg(feature = "use_ocio")] ocio_displays,
-            #[cfg(feature = "use_ocio")] ocio_views,
-            #[cfg(feature = "use_ocio")] set_ocio_display_view,
-            #[cfg(feature = "use_ocio")] ocio_selection
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,6 +17,7 @@
     <nav class="tabs">
       <button id="tab-btn-preview" class="active">Preview</button>
       <button id="tab-btn-video">Video</button>
+      <button id="tab-btn-settings">Settings</button>
     </nav>
     <section id="tab-preview" style="display:block;">
     <header>
@@ -35,7 +36,6 @@
         <button id="save">PNG書き出し</button>
         <button id="showlog">ログ表示</button>
         <button id="clearlog">ログ消去</button>
-        <label><input id="log-consent" type="checkbox" /> 解析情報送信を許可</label>
       </div>
       <div id="ocio-settings" class="toolbar" style="display:none;">
         <label>Display <select id="ocio-display"></select></label>
@@ -73,6 +73,24 @@
       <canvas id="cv"></canvas>
       <div>
         <canvas id="hist" width="256" height="100"></canvas>
+        <canvas id="waveform" width="256" height="100"></canvas>
+        <div class="scope-controls">
+          <label>Channel
+            <select id="scope-channel">
+              <option value="rgb" selected>RGB</option>
+              <option value="r">R</option>
+              <option value="g">G</option>
+              <option value="b">B</option>
+            </select>
+          </label>
+          <label>Scale
+            <select id="scope-scale">
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+        </div>
         <div class="readout" id="readout">x: -, y: -, linear: -</div>
         <pre id="logbox" class="logbox"></pre>
         <div id="attrs">
@@ -137,6 +155,15 @@
         </div>
         <progress id="prores-progress" max="100" value="0" style="width: 100%; display:none;"></progress>
       </fieldset>
+    </section>
+
+    <section id="tab-settings" style="display:none; padding:8px 12px;">
+      <h2>Settings</h2>
+      <div class="toolbar">
+        <label>Progress Interval (ms) <input id="progress-interval" type="number" min="0" value="100"/></label>
+        <label>Progress Threshold (%) <input id="progress-threshold" type="number" min="0" step="0.1" value="0.5"/></label>
+        <label><input id="log-consent" type="checkbox" /> 解析情報送信を許可</label>
+      </div>
     </section>
     <script src="index.js"></script>
   </body>
