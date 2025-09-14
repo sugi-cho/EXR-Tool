@@ -183,6 +183,8 @@
     const lutClip = getEl('lut-clip');
     const lutPreset = getEl('lut-preset');
     const makeLutBtn = getEl('make-lut');
+    const cancelLutBtn = getEl('cancel-lut');
+    const lutProg = getEl('lut-progress');
     const applyPresetBtn = getEl('apply-preset');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
@@ -340,8 +342,33 @@
         } else {
           // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
           // トーンは src: linear, dst: srgb を既定とする。
-          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
-          appendLog('3D LUT生成: ' + out);
+          const t = window.__TAURI__;
+          if (t && t.event && t.event.listen && lutProg && cancelLutBtn) {
+            lutProg.style.display = 'inline';
+            lutProg.value = 0;
+            cancelLutBtn.style.display = 'inline';
+            const unlisten = await t.event.listen('lut-progress', e => { try { lutProg.value = e.payload; } catch(_){} });
+            const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
+            cancelLutBtn.addEventListener('click', cancelHandler);
+            try {
+              await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+              appendLog('3D LUT生成: ' + out);
+            } catch (e) {
+              if (String(e).includes('cancelled')) {
+                appendLog('LUT生成キャンセル');
+              } else {
+                appendLog('LUT生成失敗: ' + e);
+              }
+            } finally {
+              unlisten();
+              cancelLutBtn.removeEventListener('click', cancelHandler);
+              lutProg.style.display = 'none';
+              cancelLutBtn.style.display = 'none';
+            }
+          } else {
+            await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+            appendLog('3D LUT生成: ' + out);
+          }
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
     });
