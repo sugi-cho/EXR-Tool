@@ -9,13 +9,14 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH, Duration};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use exrtool_core::{
-    apply_gamma, export_png, generate_preview, load_exr_basic, make_3d_lut_cube, parse_cube,
-    srgb_encode, ClipMode, LoadedExr, Lut, PreviewImage, PreviewQuality, Primaries, TransferFn,
+    apply_gamma, compute_image_stats, export_png, generate_preview, load_exr_basic, make_3d_lut_cube,
+    parse_cube, srgb_encode, ClipMode, ImageStats, LoadedExr, Lut, PreviewImage, PreviewQuality,
+    Primaries, TransferFn,
 };
 #[cfg(feature = "use_ocio")]
 use exrtool_core::ocio::{Config as OcioConfig, Processor as OcioProcessor};
@@ -322,6 +323,41 @@ fn update_preview(
         s.preview.as_ref().unwrap().height,
         b64,
     ))
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Waveform {
+    x_bins: usize,
+    y_bins: usize,
+    r: Vec<u32>,
+    g: Vec<u32>,
+    b: Vec<u32>,
+}
+
+fn compute_waveform(preview: &PreviewImage, x_bins: usize, y_bins: usize) -> Waveform {
+    let w = preview.width as usize;
+    let h = preview.height as usize;
+    let xb = x_bins.max(1);
+    let yb = y_bins.max(1);
+    let mut r = vec![0u32; xb * yb];
+    let mut g = vec![0u32; xb * yb];
+    let mut b = vec![0u32; xb * yb];
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) * 4;
+            let rr = preview.rgba8[i + 0] as f32 / 255.0;
+            let gg = preview.rgba8[i + 1] as f32 / 255.0;
+            let bb = preview.rgba8[i + 2] as f32 / 255.0;
+            let xb_i = x * xb / w;
+            let y_r = (rr * (yb as f32 - 1.0)).clamp(0.0, (yb as f32 - 1.0)) as usize;
+            let y_g = (gg * (yb as f32 - 1.0)).clamp(0.0, (yb as f32 - 1.0)) as usize;
+            let y_b = (bb * (yb as f32 - 1.0)).clamp(0.0, (yb as f32 - 1.0)) as usize;
+            r[xb_i * yb + y_r] += 1;
+            g[xb_i * yb + y_g] += 1;
+            b[xb_i * yb + y_b] += 1;
+        }
+    }
+    Waveform { x_bins: xb, y_bins: yb, r, g, b }
 }
 
 #[tauri::command]
@@ -808,7 +844,7 @@ async fn seq_fps(
         use std::{collections::HashMap, path::PathBuf};
         let window_clone = window.clone();
         let prog = prog.inner().clone();
-        let result = tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
+        let result = tauri::async_runtime::spawn_blocking(move || -> Result<SeqSummary, String> {
             fn collect(
                 dir: &PathBuf,
                 recursive: bool,
@@ -836,7 +872,8 @@ async fn seq_fps(
             let d = PathBuf::from(dir);
             collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
             files.sort_by(|a, b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
-            let total = files.len().max(1) as f64;
+            let total_files = files.len();
+            let total = total_files.max(1) as f64;
             prog.cancel.store(false, Ordering::SeqCst);
             let _ = window_clone.emit("seq-progress", 0.0);
             if dry_run {
@@ -851,10 +888,6 @@ async fn seq_fps(
             let mut ok = 0usize;
             let mut baks: Vec<PathBuf> = Vec::new();
             let mut last_emit = Instant::now();
-            let cfg_lock = cfg.lock();
-            let interval_ms = cfg_lock.progress_interval_ms;
-            let pct_threshold = cfg_lock.progress_pct_threshold;
-            drop(cfg_lock);
             let mut last_pct: f64 = 0.0;
             for (i, f) in files.iter().enumerate() {
                 if prog.cancel.load(Ordering::SeqCst) {
@@ -899,7 +932,7 @@ async fn seq_fps(
             } else {
                 log_append("seq_fps: errors occurred; backups are kept");
             }
-            Ok(ok)
+            Ok(SeqSummary { success: ok, failure: total_files.saturating_sub(ok) })
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -1054,6 +1087,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             open_exr,
             update_preview,
+            image_stats,
+            image_waveform,
             probe_pixel,
             export_preview_png,
             read_log,
