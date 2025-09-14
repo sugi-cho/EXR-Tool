@@ -13,9 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use exrtool_core::{
-    apply_gamma, compute_image_stats, compute_waveform, export_png, generate_preview,
-    load_exr_basic, make_3d_lut_cube, parse_cube, srgb_encode, ClipMode, ImageStats, LoadedExr,
-    Lut, PreviewImage, PreviewQuality, Primaries, TransferFn, Waveform,
+    apply_gamma, export_png, generate_preview, load_exr_basic, make_3d_lut_cube, parse_cube,
+    srgb_encode, ClipMode, LoadedExr, Lut, PreviewImage, PreviewQuality, Primaries, TransferFn,
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -61,6 +60,16 @@ impl Default for OpenProgress {
         Self {
             cancel: AtomicBool::new(false),
         }
+    }
+}
+
+struct SeqFpsProgress {
+    cancel: AtomicBool,
+}
+
+impl Default for SeqFpsProgress {
+    fn default() -> Self {
+        Self { cancel: AtomicBool::new(false) }
     }
 }
 
@@ -356,6 +365,12 @@ fn cancel_open(prog: tauri::State<'_, Arc<OpenProgress>>) -> Result<(), String> 
     Ok(())
 }
 
+#[tauri::command]
+fn cancel_seq_fps(prog: tauri::State<'_, Arc<SeqFpsProgress>>) -> Result<(), String> {
+    prog.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 fn log_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("exrtool-gui.log")
 }
@@ -601,6 +616,7 @@ fn make_lut(src: String, dst: String, size: u32, out_path: String) -> Result<(),
 
 #[tauri::command]
 fn make_lut3d(
+    window: tauri::Window,
     src_space: String,
     src_tf: String,
     dst_space: String,
@@ -608,7 +624,11 @@ fn make_lut3d(
     size: u32,
     out_path: String,
 ) -> Result<(), String> {
-    use exrtool_core::{make_3d_lut_cube, Primaries, TransferFn};
+    use exrtool_core::{make_3d_lut_cube_progress, Primaries, TransferFn};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
     let parse_space = |s: &str| -> Result<Primaries, String> {
         match s.to_ascii_lowercase().as_str() {
             "srgb" | "rec709" => Ok(Primaries::SrgbD65),
@@ -627,15 +647,36 @@ fn make_lut3d(
             _ => Err(format!("unknown transfer: {}", s)),
         }
     };
-    let text = make_3d_lut_cube(
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_clone = cancel.clone();
+    let id = window.listen("lut-cancel", move |_| {
+        cancel_clone.store(true, Ordering::SeqCst);
+    });
+    let _ = window.emit("lut-progress", 0.0);
+    let text = make_3d_lut_cube_progress(
         parse_space(&src_space)?,
         parse_tf(&src_tf)?,
         parse_space(&dst_space)?,
         parse_tf(&dst_tf)?,
         size as usize,
         1024,
+        |pct| {
+            let _ = window.emit("lut-progress", pct);
+            !cancel.load(Ordering::SeqCst)
+        },
     );
-    std::fs::write(out_path, text).map_err(|e| e.to_string())
+    window.unlisten(id);
+    match text {
+        Ok(t) => {
+            if cancel.load(Ordering::SeqCst) {
+                Err("cancelled".into())
+            } else {
+                let _ = window.emit("lut-progress", 100.0);
+                std::fs::write(out_path, t).map_err(|e| e.to_string())
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[tauri::command]
@@ -671,6 +712,7 @@ fn write_log(s: String) -> Result<(), String> {
 #[tauri::command]
 async fn seq_fps(
     window: tauri::Window,
+    prog: tauri::State<'_, Arc<SeqFpsProgress>>,
     dir: String,
     fps: f32,
     attr: Option<String>,
@@ -682,6 +724,7 @@ async fn seq_fps(
     {
         use std::{collections::HashMap, path::PathBuf};
         let window_clone = window.clone();
+        let prog = prog.inner().clone();
         let result = tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
             fn collect(
                 dir: &PathBuf,
@@ -711,6 +754,7 @@ async fn seq_fps(
             collect(&d, recursive, &mut files).map_err(|e| e.to_string())?;
             files.sort_by(|a, b| a.file_name().unwrap().cmp(b.file_name().unwrap()));
             let total = files.len().max(1) as f64;
+            prog.cancel.store(false, Ordering::SeqCst);
             let _ = window_clone.emit("seq-progress", 0.0);
             if dry_run {
                 let _ = window_clone.emit("seq-progress", 100.0);
@@ -726,6 +770,10 @@ async fn seq_fps(
             let mut last_emit = Instant::now();
             let mut last_pct: f64 = -1.0;
             for (i, f) in files.iter().enumerate() {
+                if prog.cancel.load(Ordering::SeqCst) {
+                    for b in baks { let _ = std::fs::remove_file(&b); }
+                    return Err("cancelled".into());
+                }
                 if backup && !dry_run {
                     let bak = f.with_extension("exr.bak");
                     if let Err(e) = std::fs::copy(&f, &bak) {
@@ -752,6 +800,10 @@ async fn seq_fps(
                     last_pct = pct;
                     last_emit = Instant::now();
                 }
+            }
+            if prog.cancel.load(Ordering::SeqCst) {
+                for b in baks { let _ = std::fs::remove_file(&b); }
+                return Err("cancelled".into());
             }
             if ok as f64 == total {
                 for b in baks {
@@ -897,6 +949,7 @@ fn main() {
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(AppState::default())))
         .manage(Arc::new(OpenProgress::default()))
+        .manage(Arc::new(SeqFpsProgress::default()))
         .manage(PresetState { presets })
         .invoke_handler(tauri::generate_handler![
             open_exr,
@@ -906,6 +959,7 @@ fn main() {
             read_log,
             clear_log,
             cancel_open,
+            cancel_seq_fps,
             set_lut_1d,
             set_lut_3d,
             clear_lut,

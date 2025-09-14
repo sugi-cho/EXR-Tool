@@ -93,48 +93,6 @@ pub fn compute_image_stats(preview: &PreviewImage, bins: usize) -> ImageStats {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Waveform {
-    /// size = x_bins * y_bins
-    pub r: Vec<u32>,
-    pub g: Vec<u32>,
-    pub b: Vec<u32>,
-    pub x_bins: usize,
-    pub y_bins: usize,
-}
-
-/// Compute a simple RGB waveform (2D histogram across X/value) from preview image.
-/// `x_bins` controls horizontal resolution, `y_bins` is quantization of 0..255 values.
-pub fn compute_waveform(preview: &PreviewImage, x_bins: usize, y_bins: usize) -> Waveform {
-    let mut r = vec![0u32; x_bins * y_bins];
-    let mut g = vec![0u32; x_bins * y_bins];
-    let mut b = vec![0u32; x_bins * y_bins];
-    let w = preview.width as usize;
-    let h = preview.height as usize;
-    let sx = x_bins as f32 / w.max(1) as f32;
-    let sy = y_bins as f32 / 255.0;
-    for y in 0..h {
-        for x in 0..w {
-            let idx = (y * w + x) * 4;
-            let bx = (x as f32 * sx).floor() as usize; // bin x
-            let vr = (preview.rgba8[idx] as f32 * sy).floor() as usize;
-            let vg = (preview.rgba8[idx + 1] as f32 * sy).floor() as usize;
-            let vb = (preview.rgba8[idx + 2] as f32 * sy).floor() as usize;
-            let off = bx * y_bins;
-            r[off + vr.min(y_bins - 1)] += 1;
-            g[off + vg.min(y_bins - 1)] += 1;
-            b[off + vb.min(y_bins - 1)] += 1;
-        }
-    }
-    Waveform {
-        r,
-        g,
-        b,
-        x_bins,
-        y_bins,
-    }
-}
-
 impl LoadedExr {
     pub fn get_linear(&self, x: usize, y: usize) -> Option<LinearPixel> {
         if x >= self.width || y >= self.height {
@@ -778,6 +736,32 @@ pub fn make_3d_lut_cube(
     size: usize,
     shaper_size: usize,
 ) -> String {
+    make_3d_lut_cube_progress(
+        src_prim,
+        src_tf,
+        dst_prim,
+        dst_tf,
+        size,
+        shaper_size,
+        |_| true,
+    )
+    .expect("make_3d_lut_cube_progress should not fail")
+}
+
+pub fn make_3d_lut_cube_progress<F>(
+    src_prim: Primaries,
+    src_tf: TransferFn,
+    dst_prim: Primaries,
+    dst_tf: TransferFn,
+    size: usize,
+    shaper_size: usize,
+    progress: F,
+) -> Result<String, String>
+where
+    F: Fn(f64) -> bool + Sync,
+{
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
     let m = rgb_to_rgb_matrix(src_prim, dst_prim);
     let mut out = String::new();
     out.push_str("TITLE \"exrtool 3D LUT\"\n");
@@ -793,31 +777,50 @@ pub fn make_3d_lut_cube(
     out.push_str(&format!("LUT_3D_SIZE {}\n", size));
     out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
     let denom = (size - 1).max(1) as f64;
-    let lines: Vec<String> = (0..size * size * size)
+    let total = size * size * size;
+    let counter = AtomicUsize::new(0);
+    let cancelled = AtomicBool::new(false);
+    let progress = &progress;
+    let lines = (0..total)
         .into_par_iter()
-        .map(|i| {
+        .try_fold(Vec::new, |mut chunk, i| {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(());
+            }
             let r = i % size;
             let g = (i / size) % size;
             let b = i / (size * size);
             let rf = r as f64 / denom;
             let gf = g as f64 / denom;
             let bf = b as f64 / denom;
-            // decode to linear in source
             let rs = tf_decode(rf, src_tf);
             let gs = tf_decode(gf, src_tf);
             let bs = tf_decode(bf, src_tf);
             let v = Vector3::new(rs, gs, bs);
-            let v_lin_dst = m * v; // gamut conversion in linear
+            let v_lin_dst = m * v;
             let rd = tf_encode(v_lin_dst.x, dst_tf).clamp(0.0, 1.0);
             let gd = tf_encode(v_lin_dst.y, dst_tf).clamp(0.0, 1.0);
             let bd = tf_encode(v_lin_dst.z, dst_tf).clamp(0.0, 1.0);
-            format!("{:.10} {:.10} {:.10}\n", rd, gd, bd)
+            chunk.push(format!("{:.10} {:.10} {:.10}\n", rd, gd, bd));
+            let c = counter.fetch_add(1, Ordering::Relaxed) + 1;
+            if c % 1000 == 0 || c == total {
+                let pct = c as f64 / total as f64 * 100.0;
+                if !progress(pct) {
+                    cancelled.store(true, Ordering::Relaxed);
+                    return Err(());
+                }
+            }
+            Ok(chunk)
         })
-        .collect();
+        .try_reduce(Vec::new, |mut a, mut b| {
+            a.append(&mut b);
+            Ok(a)
+        })
+        .map_err(|_| "cancelled".to_string())?;
     for line in lines {
         out.push_str(&line);
     }
-    out
+    Ok(out)
 }
 
 // ---- Rule Application ----
