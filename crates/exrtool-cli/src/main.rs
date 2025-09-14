@@ -182,7 +182,7 @@ fn main() -> Result<()> {
                 Some(parse_cube(&txt)?)
             } else { None };
             let pq = match quality { Quality::Fast => PreviewQuality::Fast, Quality::High => PreviewQuality::High };
-            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
+            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), #[cfg(feature = "use_ocio")] None, pq);
             export_png(&out, &preview)?;
             println!(
                 "w={} h={} => {}",
@@ -331,7 +331,7 @@ fn main() -> Result<()> {
                 for f in files {
                     let img = load_exr_basic(&f)?;
                     let pq = match quality { Quality::Fast=>PreviewQuality::Fast, Quality::High=>PreviewQuality::High };
-                    let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
+                    let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), #[cfg(feature = "use_ocio")] None, pq);
                     // encode PNG to ffmpeg stdin
                     let buf = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8).expect("invalid buffer");
                     let mut bytes: Vec<u8> = Vec::new();

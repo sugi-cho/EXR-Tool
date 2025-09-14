@@ -396,6 +396,51 @@
 
     if (lutPreset) lutPreset.dispatchEvent(new Event('change'));
 
+    // --- OCIO settings ---
+    const ocioDiv = getEl('ocio-settings');
+    const ocioDisplay = getEl('ocio-display');
+    const ocioView = getEl('ocio-view');
+    const applyOcio = getEl('apply-ocio');
+
+    async function refreshOcioViews() {
+      if (!ocioDisplay || !ocioView) return;
+      try {
+        if (!(await ensureTauriReady())) return;
+        const views = await invoke('ocio_views', { display: ocioDisplay.value });
+        ocioView.innerHTML = (views || []).map(v => `<option>${v}</option>`).join('');
+      } catch (_) {}
+    }
+
+    async function initOcio() {
+      if (!ocioDiv || !ocioDisplay || !ocioView) return;
+      try {
+        if (!(await ensureTauriReady())) return;
+        const displays = await invoke('ocio_displays');
+        if (!Array.isArray(displays) || displays.length === 0) return;
+        ocioDiv.style.display = 'block';
+        ocioDisplay.innerHTML = displays.map(d => `<option>${d}</option>`).join('');
+        const sel = await invoke('ocio_selection');
+        if (Array.isArray(sel)) {
+          if (sel[0]) ocioDisplay.value = sel[0];
+          await refreshOcioViews();
+          if (sel[1]) ocioView.value = sel[1];
+        } else {
+          await refreshOcioViews();
+        }
+      } catch (_) {}
+    }
+
+    if (ocioDisplay) ocioDisplay.addEventListener('change', refreshOcioViews);
+    if (applyOcio) applyOcio.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        await invoke('set_ocio_display_view', { display: ocioDisplay?.value, view: ocioView?.value });
+        updateLater();
+      } catch (e) { appendLog('OCIO設定失敗: ' + e); }
+    });
+
+    initOcio();
+
     // 早期にTauri注入が完了するケース向け
     ensureTauriReady(2000);
     appendLog('UI ready');

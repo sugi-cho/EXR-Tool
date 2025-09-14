@@ -158,6 +158,7 @@ pub fn generate_preview(
     exposure: f32,
     gamma: f32,
     lut: Option<&Lut>,
+    #[cfg(feature = "use_ocio")] ocio: Option<&crate::ocio::Processor>,
     quality: PreviewQuality,
 ) -> PreviewImage {
     let (w, h) = (img.width as u32, img.height as u32);
@@ -208,6 +209,12 @@ pub fn generate_preview(
                     let m = 2.0f32.powf(exposure);
                     r *= m; g *= m; b *= m;
 
+                    #[cfg(feature = "use_ocio")] if let Some(p) = ocio {
+                        let mut rgb = [r, g, b];
+                        p.apply_rgb(&mut rgb);
+                        r = rgb[0]; g = rgb[1]; b = rgb[2];
+                    }
+
                     if let Some(l) = lut {
                         let rgb = l.apply([r, g, b]);
                         r = rgb[0]; g = rgb[1]; b = rgb[2];
@@ -239,6 +246,12 @@ pub fn generate_preview(
 
                     let m = 2.0f32.powf(exposure);
                     r *= m; g *= m; b *= m;
+
+                    #[cfg(feature = "use_ocio")] if let Some(p) = ocio {
+                        let mut rgb = [r, g, b];
+                        p.apply_rgb(&mut rgb);
+                        r = rgb[0]; g = rgb[1]; b = rgb[2];
+                    }
 
                     if let Some(l) = lut {
                         let rgb = l.apply([r, g, b]);
@@ -763,6 +776,7 @@ pub fn apply_rules_file(path: &Path, dry_run: bool, backup: bool) -> Result<()> 
             r.exposure.unwrap_or(0.0),
             r.gamma.unwrap_or(2.2),
             lut_obj.as_ref(),
+            #[cfg(feature = "use_ocio")] None,
             PreviewQuality::High,
         );
         if backup && out.exists() {

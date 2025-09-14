@@ -37,6 +37,11 @@
         <button id="clearlog">ログ消去</button>
         <label><input id="log-consent" type="checkbox" /> 解析情報送信を許可</label>
       </div>
+      <div id="ocio-settings" class="toolbar" style="display:none;">
+        <label>Display <select id="ocio-display"></select></label>
+        <label>View <select id="ocio-view"></select></label>
+        <button id="apply-ocio">Apply</button>
+      </div>
       <div class="toolbar">
         <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>→ 先<select id="lut-dst"><option>srgb</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>

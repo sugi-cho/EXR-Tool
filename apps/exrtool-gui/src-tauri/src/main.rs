@@ -28,6 +28,8 @@ use exrtool_core::{
     TransferFn,
     ClipMode,
 };
+#[cfg(feature = "use_ocio")]
+use exrtool_core::ocio::{Config as OcioConfig, Processor as OcioProcessor};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct LutPreset {
@@ -49,6 +51,14 @@ struct AppState {
     scale: f32,       // preview座標→元画像座標への係数 (orig = preview * scale)
     lut: Option<Lut>, // メモリ内LUT（即時プレビュー用）
     allow_send: bool, // ログ送信許可
+    #[cfg(feature = "use_ocio")]
+    ocio_cfg: Option<OcioConfig>,
+    #[cfg(feature = "use_ocio")]
+    ocio_proc: Option<OcioProcessor>,
+    #[cfg(feature = "use_ocio")]
+    ocio_display: Option<String>,
+    #[cfg(feature = "use_ocio")]
+    ocio_view: Option<String>,
 }
 
 impl Default for AppState {
@@ -59,6 +69,14 @@ impl Default for AppState {
             scale: 1.0,
             lut: None,
             allow_send: false,
+            #[cfg(feature = "use_ocio")]
+            ocio_cfg: None,
+            #[cfg(feature = "use_ocio")]
+            ocio_proc: None,
+            #[cfg(feature = "use_ocio")]
+            ocio_display: None,
+            #[cfg(feature = "use_ocio")]
+            ocio_view: None,
         }
     }
 }
@@ -76,6 +94,10 @@ impl Default for OpenProgress {
 #[derive(Serialize, Deserialize)]
 struct AppConfig {
     send_logs: bool,
+    #[cfg(feature = "use_ocio")]
+    display: Option<String>,
+    #[cfg(feature = "use_ocio")]
+    view: Option<String>,
 }
 
 fn config_path() -> PathBuf {
@@ -84,8 +106,20 @@ fn config_path() -> PathBuf {
 
 fn load_config() -> AppConfig {
     match std::fs::read_to_string(config_path()) {
-        Ok(t) => serde_json::from_str(&t).unwrap_or(AppConfig { send_logs: false }),
-        Err(_) => AppConfig { send_logs: false },
+        Ok(t) => serde_json::from_str(&t).unwrap_or(AppConfig {
+            send_logs: false,
+            #[cfg(feature = "use_ocio")]
+            display: None,
+            #[cfg(feature = "use_ocio")]
+            view: None,
+        }),
+        Err(_) => AppConfig {
+            send_logs: false,
+            #[cfg(feature = "use_ocio")]
+            display: None,
+            #[cfg(feature = "use_ocio")]
+            view: None,
+        },
     }
 }
 
@@ -141,7 +175,7 @@ async fn open_exr(
         log_append("open_exr: no LUT");
     }
     let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
-    let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref(), pq);
+    let preview = generate_preview(&img, max_size, exposure, gamma, s_lut.as_ref(), #[cfg(feature = "use_ocio")] s.ocio_proc.as_ref(), pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| "invalid image".to_string())?;
     let mut buf: Vec<u8> = Vec::new();
@@ -226,7 +260,7 @@ fn update_preview(
         log_append(&format!("update_preview: use_file_lut, file_lut_present={}", lut_from_file.is_some()));
     }
     let pq = if high_quality { PreviewQuality::High } else { PreviewQuality::Fast };
-    let preview = generate_preview(img, max_size, exposure, gamma, lut_ref, pq);
+    let preview = generate_preview(img, max_size, exposure, gamma, lut_ref, #[cfg(feature = "use_ocio")] s.ocio_proc.as_ref(), pq);
     let png = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8.clone())
         .ok_or_else(|| {
             let msg = "update_preview: invalid preview buffer";
@@ -586,7 +620,9 @@ fn set_log_permission(
         let mut s = state.lock();
         s.allow_send = allow;
     }
-    save_config(&AppConfig { send_logs: allow })?;
+    let mut cfg = load_config();
+    cfg.send_logs = allow;
+    save_config(&cfg)?;
     Ok(())
 }
 
@@ -594,6 +630,63 @@ fn set_log_permission(
 fn write_log(s: String) -> Result<(), String> {
     log_append(&s);
     Ok(())
+}
+
+#[cfg(feature = "use_ocio")]
+#[tauri::command]
+fn ocio_displays(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<Vec<String>, String> {
+    let mut s = state.lock();
+    if s.ocio_cfg.is_none() {
+        let path = std::env::var("OCIO").map_err(|_| "OCIO env not set".to_string())?;
+        s.ocio_cfg = Some(OcioConfig::from_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?);
+    }
+    Ok(s.ocio_cfg.as_ref().unwrap().displays())
+}
+
+#[cfg(feature = "use_ocio")]
+#[tauri::command]
+fn ocio_views(state: tauri::State<Arc<Mutex<AppState>>>, display: String) -> Result<Vec<String>, String> {
+    let mut s = state.lock();
+    if s.ocio_cfg.is_none() {
+        let path = std::env::var("OCIO").map_err(|_| "OCIO env not set".to_string())?;
+        s.ocio_cfg = Some(OcioConfig::from_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?);
+    }
+    Ok(s.ocio_cfg.as_ref().unwrap().views(&display))
+}
+
+#[cfg(feature = "use_ocio")]
+#[tauri::command]
+fn set_ocio_display_view(
+    state: tauri::State<Arc<Mutex<AppState>>>,
+    display: String,
+    view: String,
+) -> Result<(), String> {
+    let mut s = state.lock();
+    if s.ocio_cfg.is_none() {
+        let path = std::env::var("OCIO").map_err(|_| "OCIO env not set".to_string())?;
+        s.ocio_cfg = Some(OcioConfig::from_file(std::path::Path::new(&path)).map_err(|e| e.to_string())?);
+    }
+    let proc = s
+        .ocio_cfg
+        .as_ref()
+        .unwrap()
+        .processor_display_view(&display, &view)
+        .map_err(|e| e.to_string())?;
+    s.ocio_proc = Some(proc);
+    s.ocio_display = Some(display.clone());
+    s.ocio_view = Some(view.clone());
+    let mut cfg = load_config();
+    cfg.display = Some(display);
+    cfg.view = Some(view);
+    save_config(&cfg)?;
+    Ok(())
+}
+
+#[cfg(feature = "use_ocio")]
+#[tauri::command]
+fn ocio_selection(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(Option<String>, Option<String>), String> {
+    let s = state.lock();
+    Ok((s.ocio_display.clone(), s.ocio_view.clone()))
 }
 
 // --- Video / Sequence commands ---
@@ -719,7 +812,7 @@ fn export_prores(
         for (i, f) in files.iter().enumerate() {
             let img = load_exr_basic(f).map_err(|e| e.to_string())?;
             let pq = if quality.to_lowercase()=="high" { PreviewQuality::High } else { PreviewQuality::Fast };
-            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), pq);
+            let preview = generate_preview(&img, max_size, exposure, gamma, lut_obj.as_ref(), #[cfg(feature = "use_ocio")] None, pq);
             let buf = image::RgbaImage::from_raw(preview.width, preview.height, preview.rgba8).ok_or("invalid buffer")?;
             let mut bytes: Vec<u8> = Vec::new();
             image::DynamicImage::ImageRgba8(buf).write_to(&mut std::io::Cursor::new(&mut bytes), ImageOutputFormat::Png).map_err(|e| e.to_string())?;
@@ -740,8 +833,27 @@ fn main() {
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default();
 
+    let mut init_state = AppState::default();
+    let cfg = load_config();
+    init_state.allow_send = cfg.send_logs;
+    #[cfg(feature = "use_ocio")]
+    {
+        if let (Some(d), Some(v)) = (cfg.display.clone(), cfg.view.clone()) {
+            if let Ok(p) = std::env::var("OCIO") {
+                if let Ok(c) = OcioConfig::from_file(std::path::Path::new(&p)) {
+                    if let Ok(proc) = c.processor_display_view(&d, &v) {
+                        init_state.ocio_cfg = Some(c);
+                        init_state.ocio_proc = Some(proc);
+                        init_state.ocio_display = Some(d);
+                        init_state.ocio_view = Some(v);
+                    }
+                }
+            }
+        }
+    }
+
     tauri::Builder::default()
-        .manage(Arc::new(Mutex::new(AppState::default())))
+        .manage(Arc::new(Mutex::new(init_state)))
         .manage(Arc::new(OpenProgress::default()))
         .manage(PresetState { presets })
         .invoke_handler(tauri::generate_handler![
@@ -761,7 +873,13 @@ fn main() {
             make_lut3d,
             seq_fps,
             export_prores,
-            write_log
+            write_log,
+            get_log_permission,
+            set_log_permission,
+            #[cfg(feature = "use_ocio")] ocio_displays,
+            #[cfg(feature = "use_ocio")] ocio_views,
+            #[cfg(feature = "use_ocio")] set_ocio_display_view,
+            #[cfg(feature = "use_ocio")] ocio_selection
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
