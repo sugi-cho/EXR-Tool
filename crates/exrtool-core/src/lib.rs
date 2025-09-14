@@ -1,18 +1,18 @@
 pub mod rules;
 use anyhow::{anyhow, Result};
+use image::imageops::FilterType;
 use nalgebra::{Matrix3, Vector3};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use image::imageops::FilterType;
 
 #[cfg(feature = "use_exr_crate")]
 pub mod metadata;
-#[cfg(feature = "use_exr_crate")]
-mod save;
 #[cfg(feature = "use_ocio")]
 pub mod ocio;
+#[cfg(feature = "use_exr_crate")]
+mod save;
 
 // Minimal metadata structures used by read_metadata() regardless of feature flags
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,11 +82,57 @@ pub fn compute_image_stats(preview: &PreviewImage, bins: usize) -> ImageStats {
         let r = (px[0] as f32 * scale).round() as usize;
         let g = (px[1] as f32 * scale).round() as usize;
         let b = (px[2] as f32 * scale).round() as usize;
-        hist_r[r.min(bins-1)] += 1;
-        hist_g[g.min(bins-1)] += 1;
-        hist_b[b.min(bins-1)] += 1;
+        hist_r[r.min(bins - 1)] += 1;
+        hist_g[g.min(bins - 1)] += 1;
+        hist_b[b.min(bins - 1)] += 1;
     }
-    ImageStats { hist_r, hist_g, hist_b }
+    ImageStats {
+        hist_r,
+        hist_g,
+        hist_b,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Waveform {
+    /// size = x_bins * y_bins
+    pub r: Vec<u32>,
+    pub g: Vec<u32>,
+    pub b: Vec<u32>,
+    pub x_bins: usize,
+    pub y_bins: usize,
+}
+
+/// Compute a simple RGB waveform (2D histogram across X/value) from preview image.
+/// `x_bins` controls horizontal resolution, `y_bins` is quantization of 0..255 values.
+pub fn compute_waveform(preview: &PreviewImage, x_bins: usize, y_bins: usize) -> Waveform {
+    let mut r = vec![0u32; x_bins * y_bins];
+    let mut g = vec![0u32; x_bins * y_bins];
+    let mut b = vec![0u32; x_bins * y_bins];
+    let w = preview.width as usize;
+    let h = preview.height as usize;
+    let sx = x_bins as f32 / w.max(1) as f32;
+    let sy = y_bins as f32 / 255.0;
+    for y in 0..h {
+        for x in 0..w {
+            let idx = (y * w + x) * 4;
+            let bx = (x as f32 * sx).floor() as usize; // bin x
+            let vr = (preview.rgba8[idx] as f32 * sy).floor() as usize;
+            let vg = (preview.rgba8[idx + 1] as f32 * sy).floor() as usize;
+            let vb = (preview.rgba8[idx + 2] as f32 * sy).floor() as usize;
+            let off = bx * y_bins;
+            r[off + vr.min(y_bins - 1)] += 1;
+            g[off + vg.min(y_bins - 1)] += 1;
+            b[off + vb.min(y_bins - 1)] += 1;
+        }
+    }
+    Waveform {
+        r,
+        g,
+        b,
+        x_bins,
+        y_bins,
+    }
 }
 
 impl LoadedExr {
@@ -150,7 +196,10 @@ pub fn load_exr_basic(path: &Path) -> Result<LoadedExr> {
 
 // ---- Preview Generation ----
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum PreviewQuality { Fast, High }
+pub enum PreviewQuality {
+    Fast,
+    High,
+}
 
 pub fn generate_preview(
     img: &LoadedExr,
@@ -185,36 +234,52 @@ pub fn generate_preview(
                     let tx = (sx - x0 as f32).clamp(0.0, 1.0);
                     let ty = (sy - y0 as f32).clamp(0.0, 1.0);
 
-                    let sample = |x:i32,y:i32| -> (f32,f32,f32,f32) {
+                    let sample = |x: i32, y: i32| -> (f32, f32, f32, f32) {
                         let idx = (y as usize * img.width + x as usize) * 4;
                         (
-                            img.rgba_f32[idx+0],
-                            img.rgba_f32[idx+1],
-                            img.rgba_f32[idx+2],
-                            img.rgba_f32[idx+3]
+                            img.rgba_f32[idx + 0],
+                            img.rgba_f32[idx + 1],
+                            img.rgba_f32[idx + 2],
+                            img.rgba_f32[idx + 3],
                         )
                     };
-                    let (r00,g00,b00,a00) = sample(x0,y0);
-                    let (r10,g10,b10,a10) = sample(x1,y0);
-                    let (r01,g01,b01,a01) = sample(x0,y1);
-                    let (r11,g11,b11,a11) = sample(x1,y1);
-                    let lerp = |a:f32,b:f32,t:f32| a + (b-a)*t;
-                    let r0 = lerp(r00,r10,tx); let r1 = lerp(r01,r11,tx); let mut r = lerp(r0,r1,ty);
-                    let g0 = lerp(g00,g10,tx); let g1 = lerp(g01,g11,tx); let mut g = lerp(g0,g1,ty);
-                    let b0 = lerp(b00,b10,tx); let b1 = lerp(b01,b11,tx); let mut b = lerp(b0,b1,ty);
-                    let a0 = lerp(a00,a10,tx); let a1 = lerp(a01,a11,tx); let a = lerp(a0,a1,ty);
+                    let (r00, g00, b00, a00) = sample(x0, y0);
+                    let (r10, g10, b10, a10) = sample(x1, y0);
+                    let (r01, g01, b01, a01) = sample(x0, y1);
+                    let (r11, g11, b11, a11) = sample(x1, y1);
+                    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+                    let r0 = lerp(r00, r10, tx);
+                    let r1 = lerp(r01, r11, tx);
+                    let mut r = lerp(r0, r1, ty);
+                    let g0 = lerp(g00, g10, tx);
+                    let g1 = lerp(g01, g11, tx);
+                    let mut g = lerp(g0, g1, ty);
+                    let b0 = lerp(b00, b10, tx);
+                    let b1 = lerp(b01, b11, tx);
+                    let mut b = lerp(b0, b1, ty);
+                    let a0 = lerp(a00, a10, tx);
+                    let a1 = lerp(a01, a11, tx);
+                    let a = lerp(a0, a1, ty);
 
                     // exposure in stops (2^exposure)
                     let m = 2.0f32.powf(exposure);
-                    r *= m; g *= m; b *= m;
+                    r *= m;
+                    g *= m;
+                    b *= m;
 
                     if let Some(l) = lut {
                         let rgb = l.apply([r, g, b]);
-                        r = rgb[0]; g = rgb[1]; b = rgb[2];
+                        r = rgb[0];
+                        g = rgb[1];
+                        b = rgb[2];
                     }
 
                     let rgb = apply_gamma([r, g, b], gamma);
-                    let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+                    let (r8, g8, b8) = (
+                        srgb_encode(rgb[0]),
+                        srgb_encode(rgb[1]),
+                        srgb_encode(rgb[2]),
+                    );
 
                     let di = (oy * out_w + ox) as usize * 4;
                     rgba8[di + 0] = r8;
@@ -225,8 +290,12 @@ pub fn generate_preview(
             }
         }
         PreviewQuality::High => {
-            let src = image::ImageBuffer::<image::Rgba<f32>, Vec<f32>>::from_raw(w, h, img.rgba_f32.clone())
-                .expect("invalid rgba buffer");
+            let src = image::ImageBuffer::<image::Rgba<f32>, Vec<f32>>::from_raw(
+                w,
+                h,
+                img.rgba_f32.clone(),
+            )
+            .expect("invalid rgba buffer");
             let resized = image::imageops::resize(&src, out_w, out_h, FilterType::Lanczos3);
             let data = resized.into_vec();
             for oy in 0..out_h {
@@ -238,15 +307,23 @@ pub fn generate_preview(
                     let a = data[idx + 3];
 
                     let m = 2.0f32.powf(exposure);
-                    r *= m; g *= m; b *= m;
+                    r *= m;
+                    g *= m;
+                    b *= m;
 
                     if let Some(l) = lut {
                         let rgb = l.apply([r, g, b]);
-                        r = rgb[0]; g = rgb[1]; b = rgb[2];
+                        r = rgb[0];
+                        g = rgb[1];
+                        b = rgb[2];
                     }
 
                     let rgb = apply_gamma([r, g, b], gamma);
-                    let (r8, g8, b8) = (srgb_encode(rgb[0]), srgb_encode(rgb[1]), srgb_encode(rgb[2]));
+                    let (r8, g8, b8) = (
+                        srgb_encode(rgb[0]),
+                        srgb_encode(rgb[1]),
+                        srgb_encode(rgb[2]),
+                    );
 
                     rgba8[idx + 0] = r8;
                     rgba8[idx + 1] = g8;
@@ -275,13 +352,13 @@ pub fn export_png(path: &Path, preview: &PreviewImage) -> Result<()> {
 #[derive(Debug, Clone)]
 pub struct Lut {
     shaper_size: usize,
-    shaper_table: Vec<[f32;3]>,
+    shaper_table: Vec<[f32; 3]>,
     cube_size: usize,
-    cube_table: Vec<[f32;3]>,
+    cube_table: Vec<[f32; 3]>,
 }
 
 impl Lut {
-    pub fn apply(&self, rgb: [f32;3]) -> [f32;3] {
+    pub fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
         let mut v = rgb;
         if self.shaper_size > 0 {
             v = apply_1d(&v, self.shaper_size, &self.shaper_table);
@@ -293,9 +370,9 @@ impl Lut {
     }
 }
 
-fn apply_1d(rgb: &[f32;3], size: usize, table: &[[f32;3]]) -> [f32;3] {
+fn apply_1d(rgb: &[f32; 3], size: usize, table: &[[f32; 3]]) -> [f32; 3] {
     let s = (size - 1) as f32;
-    let mut out = [0.0;3];
+    let mut out = [0.0; 3];
     for i in 0..3 {
         let x = rgb[i].clamp(0.0, 1.0) * s;
         let i0 = x.floor() as usize;
@@ -308,51 +385,68 @@ fn apply_1d(rgb: &[f32;3], size: usize, table: &[[f32;3]]) -> [f32;3] {
     out
 }
 
-fn apply_3d(rgb: &[f32;3], size: usize, table: &[[f32;3]]) -> [f32;3] {
+fn apply_3d(rgb: &[f32; 3], size: usize, table: &[[f32; 3]]) -> [f32; 3] {
     let n = size as i32;
     let s = (n - 1) as f32;
     let rx = (rgb[0].clamp(0.0, 1.0) * s).min(s);
     let gy = (rgb[1].clamp(0.0, 1.0) * s).min(s);
     let bz = (rgb[2].clamp(0.0, 1.0) * s).min(s);
-    let x0 = rx.floor() as i32; let y0 = gy.floor() as i32; let z0 = bz.floor() as i32;
-    let x1 = (x0 + 1).min(n-1); let y1 = (y0 + 1).min(n-1); let z1 = (z0 + 1).min(n-1);
-    let tx = rx - x0 as f32; let ty = gy - y0 as f32; let tz = bz - z0 as f32;
+    let x0 = rx.floor() as i32;
+    let y0 = gy.floor() as i32;
+    let z0 = bz.floor() as i32;
+    let x1 = (x0 + 1).min(n - 1);
+    let y1 = (y0 + 1).min(n - 1);
+    let z1 = (z0 + 1).min(n - 1);
+    let tx = rx - x0 as f32;
+    let ty = gy - y0 as f32;
+    let tz = bz - z0 as f32;
 
-    let idx = |x:i32,y:i32,z:i32| -> usize {
+    let idx = |x: i32, y: i32, z: i32| -> usize {
         (z as usize * size * size) + (y as usize * size) + x as usize
     };
 
-    let c000 = table[idx(x0,y0,z0)];
-    let c100 = table[idx(x1,y0,z0)];
-    let c010 = table[idx(x0,y1,z0)];
-    let c110 = table[idx(x1,y1,z0)];
-    let c001 = table[idx(x0,y0,z1)];
-    let c101 = table[idx(x1,y0,z1)];
-    let c011 = table[idx(x0,y1,z1)];
-    let c111 = table[idx(x1,y1,z1)];
+    let c000 = table[idx(x0, y0, z0)];
+    let c100 = table[idx(x1, y0, z0)];
+    let c010 = table[idx(x0, y1, z0)];
+    let c110 = table[idx(x1, y1, z0)];
+    let c001 = table[idx(x0, y0, z1)];
+    let c101 = table[idx(x1, y0, z1)];
+    let c011 = table[idx(x0, y1, z1)];
+    let c111 = table[idx(x1, y1, z1)];
 
-    let lerp = |a:[f32;3],b:[f32;3],t:f32| [
-        a[0]+(b[0]-a[0])*t,
-        a[1]+(b[1]-a[1])*t,
-        a[2]+(b[2]-a[2])*t
-    ];
-    let c00 = lerp(c000,c100,tx); let c10 = lerp(c010,c110,tx);
-    let c01 = lerp(c001,c101,tx); let c11 = lerp(c011,c111,tx);
-    let c0 = lerp(c00,c10,ty); let c1 = lerp(c01,c11,ty);
-    lerp(c0,c1,tz)
+    let lerp = |a: [f32; 3], b: [f32; 3], t: f32| {
+        [
+            a[0] + (b[0] - a[0]) * t,
+            a[1] + (b[1] - a[1]) * t,
+            a[2] + (b[2] - a[2]) * t,
+        ]
+    };
+    let c00 = lerp(c000, c100, tx);
+    let c10 = lerp(c010, c110, tx);
+    let c01 = lerp(c001, c101, tx);
+    let c11 = lerp(c011, c111, tx);
+    let c0 = lerp(c00, c10, ty);
+    let c1 = lerp(c01, c11, ty);
+    lerp(c0, c1, tz)
 }
 
 pub fn parse_cube(text: &str) -> Result<Lut> {
-    enum Section { None, Lut1D, Lut3D }
+    enum Section {
+        None,
+        Lut1D,
+        Lut3D,
+    }
     let mut section = Section::None;
     let mut shaper_size = 0usize;
-    let mut shaper_table: Vec<[f32;3]> = Vec::new();
+    let mut shaper_table: Vec<[f32; 3]> = Vec::new();
     let mut cube_size = 0usize;
-    let mut cube_table: Vec<[f32;3]> = Vec::new();
+    let mut cube_table: Vec<[f32; 3]> = Vec::new();
 
     for line in text.lines() {
         let l = line.trim();
-        if l.is_empty() || l.starts_with('#') { continue; }
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
         if let Some(rest) = l.strip_prefix("LUT_1D_SIZE") {
             shaper_size = rest.trim().parse()?;
             section = Section::Lut1D;
@@ -377,8 +471,8 @@ pub fn parse_cube(text: &str) -> Result<Lut> {
             let g: f32 = parts[1].parse()?;
             let b: f32 = parts[2].parse()?;
             match section {
-                Section::Lut1D => shaper_table.push([r,g,b]),
-                Section::Lut3D => cube_table.push([r,g,b]),
+                Section::Lut1D => shaper_table.push([r, g, b]),
+                Section::Lut3D => cube_table.push([r, g, b]),
                 Section::None => {}
             }
         }
@@ -387,11 +481,16 @@ pub fn parse_cube(text: &str) -> Result<Lut> {
     if shaper_size > 0 && shaper_table.len() != shaper_size {
         return Err(anyhow!(".cube: invalid 1D table length"));
     }
-    if cube_size > 0 && cube_table.len() != cube_size*cube_size*cube_size {
+    if cube_size > 0 && cube_table.len() != cube_size * cube_size * cube_size {
         return Err(anyhow!(".cube: invalid 3D table length"));
     }
 
-    Ok(Lut{ shaper_size, shaper_table, cube_size, cube_table })
+    Ok(Lut {
+        shaper_size,
+        shaper_table,
+        cube_size,
+        cube_table,
+    })
 }
 
 // ---- Utilities ----
@@ -551,7 +650,7 @@ fn tf_decode(v: f64, tf: TransferFn) -> f64 {
 }
 
 /// Apply 1D tone curve conversion from `src` transfer to `dst` transfer.
-pub fn apply_tone_curve(rgb: [f32;3], src: TransferFn, dst: TransferFn) -> [f32;3] {
+pub fn apply_tone_curve(rgb: [f32; 3], src: TransferFn, dst: TransferFn) -> [f32; 3] {
     [
         tf_encode(tf_decode(rgb[0] as f64, src), dst) as f32,
         tf_encode(tf_decode(rgb[1] as f64, src), dst) as f32,
@@ -686,7 +785,7 @@ pub fn make_3d_lut_cube(
         out.push_str(&format!("LUT_1D_SIZE {}\n", shaper_size));
         out.push_str("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n");
         for i in 0..shaper_size {
-            let x = i as f32 / ((shaper_size-1).max(1) as f32);
+            let x = i as f32 / ((shaper_size - 1).max(1) as f32);
             let y = apply_tone_curve([x, x, x], src_tf, TransferFn::Linear)[0] as f64;
             out.push_str(&format!("{:.10} {:.10} {:.10}\n", y, y, y));
         }
