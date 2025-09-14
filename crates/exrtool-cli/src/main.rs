@@ -90,6 +90,9 @@ enum Commands {
         /// 出力ファイル（.mov）
         #[arg(long)]
         out: PathBuf,
+        /// ffmpeg コーデック（例: prores_ks, libx264）
+        #[arg(long, default_value = "prores_ks")]
+        codec: String,
         /// 色空間変換: linear:srgb | acescg:srgb | aces2065:srgb
         #[arg(long, default_value = "linear:srgb")]
         colorspace: String,
@@ -345,7 +348,7 @@ fn main() -> Result<()> {
                 eprintln!("seq-fps requires --features exr_pure");
             }
         }
-        Commands::Prores { dir, fps, out, colorspace, profile, max_size, exposure, gamma, quality } => {
+        Commands::Prores { dir, fps, out, codec, colorspace, profile, max_size, exposure, gamma, quality } => {
             use std::process::{Command, Stdio};
             // check ffmpeg
             if Command::new("ffmpeg").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_err() {
@@ -367,14 +370,18 @@ fn main() -> Result<()> {
                 lut_obj = Some(parse_cube(&text)?);
             }
             // spawn ffmpeg
-            let mut child = Command::new("ffmpeg")
-                .arg("-y")
+            let mut cmd = Command::new("ffmpeg");
+            cmd.arg("-y")
                 .arg("-f").arg("image2pipe")
                 .arg("-r").arg(format!("{}", fps))
                 .arg("-vcodec").arg("png")
                 .arg("-i").arg("-")
-                .arg("-c:v").arg("prores_ks")
-                .arg("-profile:v").arg(match profile.as_str() { "422hq"=>"3", "422"=>"2", "4444"=>"4", _=>"3" })
+                .arg("-c:v").arg(&codec);
+            if codec.contains("prores") {
+                cmd.arg("-profile:v")
+                    .arg(match profile.as_str() { "422hq"=>"3", "422"=>"2", "4444"=>"4", _=>"3" });
+            }
+            let mut child = cmd
                 .arg(out.as_os_str())
                 .stdin(Stdio::piped())
                 .spawn()
