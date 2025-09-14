@@ -498,11 +498,11 @@
         if (!(await ensureTauriReady())) return;
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
-        const size = (src === 'linear' || src === 'srgb')
+        const size = ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb'))
           ? (parseInt(lutSize?.value ?? '1024',10) || 1024)
           : (parseInt(lutSize?.value ?? '33',10) || 33);
         const clip = (lutClip?.value || 'clip').toLowerCase();
-        if (src === 'linear' || src === 'srgb') {
+        if ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb')) {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
           // TauriはRustの`clip_mode`引数に対してcamelCaseキー`clipMode`を受け取る
@@ -523,10 +523,10 @@
       if (lutDst) lutDst.value = dst;
       try {
         if (!(await ensureTauriReady())) return;
-        const size = (src === 'linear' || src === 'srgb')
+        const size = ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb'))
           ? (parseInt(lutSize?.value ?? '1024',10) || 1024)
           : (parseInt(lutSize?.value ?? '33',10) || 33);
-        if (src === 'linear' || src === 'srgb') {
+        if ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb')) {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
           await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: (lutClip?.value || 'clip').toLowerCase() });
