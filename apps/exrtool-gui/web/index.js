@@ -291,14 +291,19 @@
         if (transformEl && Array.isArray(transforms)) {
           const byGroup = {};
           for (const t of transforms) { const g = t.group || 'General'; if (!byGroup[g]) byGroup[g] = []; byGroup[g].push(t); }
-          transformEl.innerHTML = Object.keys(byGroup)
-            .map(g => `<optgroup label="${g}">` + byGroup[g].map(t => `<option value="${t.label}">${t.label}</option>`).join('') + `</optgroup>`)
-            .join('');
-          // Settings側のDefault Transformも同じ一覧を流用
-          if (defaultTransformEl) {
-            defaultTransformEl.innerHTML = Object.keys(byGroup)
+          // 先頭に NonTransform を追加（変換なしプレビュー）
+          const nonTransformGroup = `<optgroup label="Bypass"><option value="NonTransform">NonTransform</option></optgroup>`;
+          transformEl.innerHTML = nonTransformGroup +
+            Object.keys(byGroup)
               .map(g => `<optgroup label="${g}">` + byGroup[g].map(t => `<option value="${t.label}">${t.label}</option>`).join('') + `</optgroup>`)
               .join('');
+          // Settings側のDefault Transformも同じ一覧を流用
+          if (defaultTransformEl) {
+            const nonTransformGroup2 = `<optgroup label="Bypass"><option value="NonTransform">NonTransform</option></optgroup>`;
+            defaultTransformEl.innerHTML = nonTransformGroup2 +
+              Object.keys(byGroup)
+                .map(g => `<optgroup label="${g}">` + byGroup[g].map(t => `<option value="${t.label}">${t.label}</option>`).join('') + `</optgroup>`)
+                .join('');
           }
           // 既定Transformを読み込んで選択
           try {
@@ -322,6 +327,17 @@
       } catch (e) { await logBoth('Transform読込失敗: ' + e); }
     })();
     if (transformEl) transformEl.addEventListener('change', async () => {
+      // 特別項目: NonTransform（変換なし）
+      if (transformEl.value === 'NonTransform') {
+        try {
+          if (!(await ensureTauriReady())) return;
+          try { await invoke('clear_lut'); } catch (_) { /* ignore */ }
+          useStateLutEnabled = false;
+          updateLater();
+          await logBoth('Transform適用: NonTransform（適用なし）');
+        } catch (e) { appendLog('NonTransform 適用失敗: ' + e); }
+        return;
+      }
       const tsel = transforms.find(x => x.label === transformEl.value);
       if (!tsel) { await logBoth('Transform未選択'); return; }
       try {
