@@ -2,6 +2,16 @@
   let invoke = null; // 解決済みの invoke（nullなら未解決）
   let imgW = 0, imgH = 0;
   let useStateLutEnabled = false; // LUT in-memory 使用フラグ
+  let pipetteFixed = false; // スポイト固定
+
+  // 簡易デバウンス
+  function debounce(fn, ms) {
+    let t = null;
+    return (...args) => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
 
   function getEl(id) {
     const el = document.getElementById(id);
@@ -81,7 +91,9 @@
         ctx.drawImage(img, 0, 0);
         info.textContent = `preview: ${w}x${h}`;
         appendLog(`open ok: ${w}x${h}`);
-        drawHistogram(stats);
+        if (typeof drawHistogram === 'function' && typeof stats !== 'undefined') {
+          drawHistogram(stats);
+        }
       };
       img.src = 'data:image/png;base64,' + b64;
       await loadMetadata(path);
@@ -93,9 +105,7 @@
         alert('読み込み失敗: ' + e);
       }
     } finally {
-      if (unlisten) unlisten();
-      cancelBtn.remove();
-      progEl.remove();
+      // progress UI は未配線のため no-op
     }
   }
 
@@ -248,48 +258,44 @@
     }
 
     // Exposure/Gamma live update (debounced)
-    let timer = null;
-    const scheduleUpdate = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(async () => {
-        try {
-          if (!(await ensureTauriReady())) return;
-          const maxEl = getEl('max');
-          const lutEl = getEl('lut');
-          const tmEl = getEl('tonemap');
-          const tmOrderEl = getEl('tm-order');
-          const [w,h,b64] = await invoke('update_preview', {
-            maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
-            exposure: parseFloat(expEl?.value ?? '0'),
-            gamma: parseFloat(gammaEl?.value ?? '2.2'),
-            lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
-            useStateLut: useStateLutEnabled,
-          });
-          const img = new Image();
-          const info = getEl('info');
-          img.onload = () => {
-            const ctx = cv.getContext('2d');
-            cv.width = w; cv.height = h;
-            ctx.clearRect(0, 0, w, h);
-            ctx.drawImage(img, 0, 0);
-            if (info) info.textContent = `preview: ${w}x${h}`;
+    async function updatePreview() {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const maxEl = getEl('max');
+        const lutEl = getEl('lut');
+        const [w,h,b64] = await invoke('update_preview', {
+          maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
+          exposure: parseFloat(expEl?.value ?? '0'),
+          gamma: parseFloat(gammaEl?.value ?? '2.2'),
+          lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
+          useStateLut: useStateLutEnabled,
+        });
+        const img = new Image();
+        const info = getEl('info');
+        img.onload = () => {
+          const ctx = cv.getContext('2d');
+          cv.width = w; cv.height = h;
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0);
+          if (info) info.textContent = `preview: ${w}x${h}`;
+          if (typeof drawHistogram === 'function' && typeof stats !== 'undefined') {
             drawHistogram(stats);
-          };
-          img.src = 'data:image/png;base64,' + b64;
-          showError('');
-        } catch (e) {
-          appendLog('update失敗: ' + e);
-          showError('update失敗: ' + e);
-        }
-      }, 120);
-    };
+          }
+        };
+        img.src = 'data:image/png;base64,' + b64;
+        showError('');
+      } catch (e) {
+        appendLog('update失敗: ' + e);
+        showError('update失敗: ' + e);
+      }
+    }
 
-    const scheduleUpdate = debounce(updatePreview, 120);
-    if (expEl) expEl.addEventListener('input', scheduleUpdate);
-    if (gammaEl) gammaEl.addEventListener('input', scheduleUpdate);
+    const updateLater = debounce(updatePreview, 120);
+    if (expEl) expEl.addEventListener('input', updateLater);
+    if (gammaEl) gammaEl.addEventListener('input', updateLater);
     if (useStateLut) useStateLut.addEventListener('change', () => {
       useStateLutEnabled = !!useStateLut.checked;
-      scheduleUpdate();
+      updateLater();
     });
 
     if (makeLutBtn) makeLutBtn.addEventListener('click', async () => {
@@ -328,7 +334,7 @@
         }
         if (useStateLut) useStateLut.checked = true;
         useStateLutEnabled = true;
-        scheduleUpdate();
+        updateLater();
         appendLog('Preset適用: ' + src + ' -> ' + dst);
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
@@ -348,13 +354,13 @@
           await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)) });
         }
         if (useStateLut) useStateLut.checked = true;
-        scheduleUpdate();
+        updateLater();
         appendLog('Preset適用: ' + src + ' -> ' + dst);
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
 
     if (clearLutBtn) clearLutBtn.addEventListener('click', async () => {
-      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; useStateLutEnabled = false; scheduleUpdate(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
+      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; useStateLutEnabled = false; updateLater(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
     });
 
     if (lutPreset) lutPreset.dispatchEvent(new Event('change'));
@@ -362,5 +368,26 @@
     // 早期にTauri注入が完了するケース向け
     ensureTauriReady(2000);
     appendLog('UI ready');
+
+    // ログ表示/消去
+    const showLogBtn = getEl('showlog');
+    const clearLogBtn = getEl('clearlog');
+    if (showLogBtn) showLogBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const text = await invoke('read_log');
+        const box = getEl('logbox');
+        if (box) { box.textContent = text || '<empty>'; box.scrollTop = box.scrollHeight; }
+      } catch (e) { appendLog('ログ取得失敗: ' + e); }
+    });
+    if (clearLogBtn) clearLogBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        await invoke('clear_log');
+        const box = getEl('logbox');
+        if (box) box.textContent = '';
+        appendLog('ログを消去しました');
+      } catch (e) { appendLog('ログ消去失敗: ' + e); }
+    });
   });
 })();
