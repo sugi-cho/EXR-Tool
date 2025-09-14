@@ -1,4 +1,8 @@
 (() => {
+  // 定数
+  const MAX_PREVIEW = 2048;          // プレビュー最大解像度
+  const STATS_BINS = 256;            // ヒストグラム/波形のビン数
+  const UPDATE_DEBOUNCE_MS = 120;    // プレビュー更新のデバウンス
   let invoke = null; // 解決済みの invoke（nullなら未解決）
   let imgW = 0, imgH = 0;
   let useStateLutEnabled = true; // LUT in-memory 使用フラグ（既定ON固定）
@@ -143,9 +147,7 @@
 
   async function openExr() {
     const pathEl = getEl('path');
-    const ocioEl = getEl('ocio');
-    // Exposure slider removed
-    const hqEl = getEl('hq');
+    // OCIO要素の参照は必要時のみ取得（openExr内では未使用）
     const cv = getEl('cv');
     const info = getEl('info');
     if (!pathEl || !cv || !info) return;
@@ -158,11 +160,11 @@
       const [w, h, b64] = await invoke('open_exr', {
         path,
         // 最大プレビュー解像度（既定）
-        maxSize: 2048,
+        maxSize: MAX_PREVIEW,
         exposure: 0,
         gamma: 1.0,
         lutPath: lutPath,
-        highQuality: !!(hqEl?.checked)
+        highQuality: true
       });
       const img = new Image();
       img.onload = () => {
@@ -314,6 +316,8 @@
             }
           } catch (_) {}
           await logBoth('Transform一覧をロードしました');
+          // 既定選択を即適用
+          try { transformEl.dispatchEvent(new Event('change')); } catch (_) {}
         }
       } catch (e) { await logBoth('Transform読込失敗: ' + e); }
     })();
@@ -460,14 +464,13 @@
     async function updatePreview() {
       try {
         if (!(await ensureTauriReady())) return;
-        const hqEl = getEl('hq');
         const [w,h,b64] = await invoke('update_preview', {
-          maxSize: 2048,
+          maxSize: MAX_PREVIEW,
           exposure: 0,
           gamma: 1.0,
           lutPath: null,
           useStateLut: useStateLutEnabled,
-          highQuality: !!(hqEl?.checked)
+          highQuality: true
         });
         const img = new Image();
         const info = getEl('info');
@@ -487,7 +490,7 @@
       }
     }
 
-    const updateLater = debounce(updatePreview, 120);
+    const updateLater = debounce(updatePreview, UPDATE_DEBOUNCE_MS);
 
     // LUT生成機能は削除
 

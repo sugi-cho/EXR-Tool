@@ -1,8 +1,12 @@
+#[cfg(feature = "use_ocio")]
 use std::env;
+#[cfg(feature = "use_ocio")]
 use std::path::PathBuf;
 
 #[cfg(feature = "use_ocio")]
 fn main() {
+    use std::path::PathBuf;
+    use std::env;
     // Build OCIO FFI only when feature is enabled
     let pkg = pkg_config::Config::new()
         .probe("OpenColorIO")

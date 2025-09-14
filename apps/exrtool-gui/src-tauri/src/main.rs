@@ -14,9 +14,8 @@ use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use exrtool_core::{
-    apply_gamma, compute_image_stats, export_png, generate_preview, load_exr_basic, make_3d_lut_cube,
-    parse_cube, srgb_encode, ClipMode, ImageStats, LoadedExr, Lut, PreviewImage, PreviewQuality,
-    Primaries, TransferFn,
+    apply_gamma, compute_image_stats, export_png, generate_preview, load_exr_basic,
+    parse_cube, srgb_encode, ImageStats, LoadedExr, Lut, PreviewImage, PreviewQuality,
 };
 #[cfg(feature = "use_ocio")]
 use exrtool_core::ocio::{Config as OcioConfig, Processor as OcioProcessor};
@@ -245,8 +244,8 @@ fn update_preview(
     exposure: f32,
     gamma: f32,
     lut_path: Option<String>,
-    tone_map: Option<String>,
-    tone_map_order: Option<String>,
+    _tone_map: Option<String>,
+    _tone_map_order: Option<String>,
     use_state_lut: bool,
     high_quality: bool,
 ) -> Result<(u32, u32, String), String> {
@@ -364,9 +363,9 @@ fn compute_waveform(preview: &PreviewImage, x_bins: usize, y_bins: usize) -> Wav
             let gg = preview.rgba8[i + 1] as f32 / 255.0;
             let bb = preview.rgba8[i + 2] as f32 / 255.0;
             let xb_i = x * xb / w;
-            let y_r = (rr * (yb as f32 - 1.0)).clamp(0.0, (yb as f32 - 1.0)) as usize;
-            let y_g = (gg * (yb as f32 - 1.0)).clamp(0.0, (yb as f32 - 1.0)) as usize;
-            let y_b = (bb * (yb as f32 - 1.0)).clamp(0.0, (yb as f32 - 1.0)) as usize;
+            let y_r = (rr * (yb as f32 - 1.0)).clamp(0.0, yb as f32 - 1.0) as usize;
+            let y_g = (gg * (yb as f32 - 1.0)).clamp(0.0, yb as f32 - 1.0) as usize;
+            let y_b = (bb * (yb as f32 - 1.0)).clamp(0.0, yb as f32 - 1.0) as usize;
             r[xb_i * yb + y_r] += 1;
             g[xb_i * yb + y_g] += 1;
             b[xb_i * yb + y_b] += 1;
@@ -659,7 +658,7 @@ fn set_lut_3d(
             _ => Err(format!("unknown transfer: {}", s)),
         }
     };
-    let parse_clip = |s: &str| -> Result<ClipMode, String> {
+    let _parse_clip = |s: &str| -> Result<ClipMode, String> {
         match s.to_ascii_lowercase().as_str() {
             "clip" => Ok(ClipMode::Clip),
             "noclip" | "none" => Ok(ClipMode::NoClip),
@@ -1094,7 +1093,7 @@ fn export_prores(
     {
         use image::ImageOutputFormat;
         use std::io::Write;
-        use std::time::{Duration, Instant};
+        use std::time::Instant;
         let mut stdin = child.stdin.take().ok_or("failed to open ffmpeg stdin")?;
         let total = files.len() as f64;
         let cfg_lock = cfg.lock();
