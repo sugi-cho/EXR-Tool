@@ -185,6 +185,8 @@
     const lutClip = getEl('lut-clip');
     const lutPreset = getEl('lut-preset');
     const makeLutBtn = getEl('make-lut');
+    const cancelLutBtn = getEl('cancel-lut');
+    const lutProg = getEl('lut-progress');
     const applyPresetBtn = getEl('apply-preset');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
@@ -372,8 +374,33 @@
         } else {
           // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
           // トーンは src: linear, dst: srgb を既定とする。
-          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
-          appendLog('3D LUT生成: ' + out);
+          const t = window.__TAURI__;
+          if (t && t.event && t.event.listen && lutProg && cancelLutBtn) {
+            lutProg.style.display = 'inline';
+            lutProg.value = 0;
+            cancelLutBtn.style.display = 'inline';
+            const unlisten = await t.event.listen('lut-progress', e => { try { lutProg.value = e.payload; } catch(_){} });
+            const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
+            cancelLutBtn.addEventListener('click', cancelHandler);
+            try {
+              await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+              appendLog('3D LUT生成: ' + out);
+            } catch (e) {
+              if (String(e).includes('cancelled')) {
+                appendLog('LUT生成キャンセル');
+              } else {
+                appendLog('LUT生成失敗: ' + e);
+              }
+            } finally {
+              unlisten();
+              cancelLutBtn.removeEventListener('click', cancelHandler);
+              lutProg.style.display = 'none';
+              cancelLutBtn.style.display = 'none';
+            }
+          } else {
+            await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
+            appendLog('3D LUT生成: ' + out);
+          }
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
     });
@@ -461,6 +488,7 @@
     const seqRecursiveEl = getEl('seq-fps-recursive');
     const seqDryRunEl = getEl('seq-fps-dryrun');
     const applyFpsBtn = getEl('apply-fps');
+    const cancelFpsBtn = getEl('cancel-fps');
     const seqProg = getEl('seq-progress');
 
     const proresFpsEl = getEl('prores-fps');
@@ -507,12 +535,25 @@
         const t = window.__TAURI__;
         if (t && t.event && t.event.listen && seqProg) {
           seqProg.style.display = 'block'; seqProg.value = 0;
+          if (cancelFpsBtn) cancelFpsBtn.style.display = 'inline';
           const unlisten = await t.event.listen('seq-progress', (e) => { try { seqProg.value = e.payload; } catch(_){} });
+          const cancelHandler = async () => { try { await invoke('cancel_seq_fps'); } catch(_){} };
+          if (cancelFpsBtn) cancelFpsBtn.addEventListener('click', cancelHandler);
           try {
             const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
             await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
             if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
-          } finally { unlisten(); seqProg.style.display = 'none'; }
+          } catch (e) {
+            if (String(e).includes('cancelled')) {
+              await logBoth('seq_fps cancelled');
+            } else {
+              appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e);
+            }
+          } finally {
+            unlisten();
+            seqProg.style.display = 'none'; seqProg.value = 0;
+            if (cancelFpsBtn) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
+          }
         } else {
           const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
           await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
