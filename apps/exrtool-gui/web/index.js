@@ -332,7 +332,8 @@
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clip_mode: clip });
+          // TauriはRustの`clip_mode`引数に対してcamelCaseキー`clipMode`を受け取る
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip });
         }
         if (useStateLut) useStateLut.checked = true;
         useStateLutEnabled = true;
@@ -353,7 +354,7 @@
         if (src === 'linear' || src === 'srgb') {
           await invoke('set_lut_1d', { src, dst, size });
         } else {
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clip_mode: (lutClip?.value || 'clip').toLowerCase() });
+          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: (lutClip?.value || 'clip').toLowerCase() });
         }
         if (useStateLut) useStateLut.checked = true;
         updateLater();
