@@ -3,6 +3,7 @@
 use anyhow::Result;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -104,6 +105,8 @@ impl Default for AppConfig {
     }
 }
 
+const LOG_ENDPOINT: &str = "https://example.com/log";
+
 fn config_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.json")
 }
@@ -120,9 +123,17 @@ fn save_config(cfg: &AppConfig) -> Result<(), String> {
     std::fs::write(config_path(), s).map_err(|e| e.to_string())
 }
 
-fn send_async(msg: String) {
+fn send_async(line: String) {
     std::thread::spawn(move || {
-        log_append(&msg);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        if let Ok(c) = client {
+            let _ = c
+                .post(LOG_ENDPOINT)
+                .json(&json!({ "log": line }))
+                .send();
+        }
     });
 }
 
@@ -413,6 +424,9 @@ fn log_append(msg: &str) {
         .open(log_path())
     {
         let _ = f.write_all(line.as_bytes());
+    }
+    if load_config().send_logs {
+        send_async(line);
     }
 }
 
