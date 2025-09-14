@@ -32,6 +32,46 @@ impl Config {
             Ok(Processor { ptr: p })
         }
     }
+
+    pub fn displays(&self) -> Vec<String> {
+        let n = unsafe { ffi::ocio_config_num_displays(self.ptr) } as usize;
+        (0..n)
+            .filter_map(|i| unsafe {
+                let p = ffi::ocio_config_get_display_name(self.ptr, i as i32);
+                if p.is_null() {
+                    None
+                } else {
+                    Some(std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned())
+                }
+            })
+            .collect()
+    }
+
+    pub fn views(&self, display: &str) -> Vec<String> {
+        let d = CString::new(display).unwrap_or_default();
+        let n = unsafe { ffi::ocio_config_num_views(self.ptr, d.as_ptr()) } as usize;
+        (0..n)
+            .filter_map(|i| unsafe {
+                let p = ffi::ocio_config_get_view_name(self.ptr, d.as_ptr(), i as i32);
+                if p.is_null() {
+                    None
+                } else {
+                    Some(std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned())
+                }
+            })
+            .collect()
+    }
+
+    pub fn processor_display_view(&self, display: &str, view: &str) -> Result<Processor> {
+        let d = CString::new(display)?;
+        let v = CString::new(view)?;
+        let p = unsafe { ffi::ocio_config_get_processor_display_view(self.ptr, d.as_ptr(), v.as_ptr()) };
+        if p.is_null() {
+            Err(anyhow!("failed to create OCIO display/view processor"))
+        } else {
+            Ok(Processor { ptr: p })
+        }
+    }
 }
 
 impl Drop for Config {

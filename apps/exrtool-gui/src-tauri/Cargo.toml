@@ -25,3 +25,4 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 # `exr`クレートでの読込を有効化
 exr_pure = ["exrtool-core/use_exr_crate"]
+use_ocio = ["exrtool-core/use_ocio"]
