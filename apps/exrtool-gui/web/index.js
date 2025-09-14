@@ -147,7 +147,7 @@
     const ocioEl = getEl('ocio');
     const maxEl = getEl('max');
     const expEl = getEl('exp');
-    const gammaEl = getEl('gamma');
+    const tfEl = getEl('tf');
     const hqEl = getEl('hq');
     const cv = getEl('cv');
     const info = getEl('info');
@@ -165,7 +165,7 @@
         path,
         maxSize: parseInt(maxEl?.value ?? '2048', 10) || 2048,
         exposure: parseFloat(expEl?.value ?? '0'),
-        gamma: parseFloat(gammaEl?.value ?? '2.2'),
+        gamma: ((()=>{ const v=(tfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })()),
         lutPath,
         highQuality: !!(hqEl?.checked)
       });
@@ -406,7 +406,7 @@
       });
     }
 
-    // Exposure/Gamma live update (debounced)
+    // Exposure/TF live update (debounced)
     async function updatePreview() {
       try {
         if (!(await ensureTauriReady())) return;
@@ -416,7 +416,7 @@
         const [w,h,b64] = await invoke('update_preview', {
           maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
           exposure: parseFloat(expEl?.value ?? '0'),
-          gamma: parseFloat(gammaEl?.value ?? '2.2'),
+          gamma: ((()=>{ const v=(tfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })()),
           lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
           useStateLut: useStateLutEnabled,
           highQuality: !!(hqEl?.checked)
@@ -441,7 +441,7 @@
 
     const updateLater = debounce(updatePreview, 120);
     if (expEl) expEl.addEventListener('input', updateLater);
-    if (gammaEl) gammaEl.addEventListener('input', updateLater);
+    if (tfEl) tfEl.addEventListener('change', updateLater);
     if (useStateLut) useStateLut.addEventListener('change', () => {
       useStateLutEnabled = !!useStateLut.checked;
       updateLater();
@@ -633,7 +633,7 @@
     const proresProfileEl = getEl('prores-profile');
     const proresMaxEl = getEl('prores-max');
     const proresExpEl = getEl('prores-exp');
-    const proresGammaEl = getEl('prores-gamma');
+    const proresTfEl = getEl('prores-tf');
     const proresQualityEl = getEl('prores-quality');
     const proresOutEl = getEl('prores-out');
     const browseProresOutBtn = getEl('browse-prores-out');
@@ -729,7 +729,7 @@
         const profile = (proresProfileEl?.value || '422hq');
         const maxSize = parseInt(proresMaxEl?.value ?? '2048', 10) || 2048;
         const exposure = parseFloat(proresExpEl?.value ?? '0') || 0;
-        const gamma = parseFloat(proresGammaEl?.value ?? '2.2') || 2.2;
+        const gamma = ((()=>{ const v=(proresTfEl?.value||'g22'); if (v==='g24') return 2.4; if (v==='linear') return 1.0; return 2.2; })());
         const quality = (proresQualityEl?.value || 'High');
         await logBoth(`export_prores: dir=${dir} out=${out} fps=${fps} cs=${colorspace} profile=${profile}`);
 
