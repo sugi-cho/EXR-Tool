@@ -1,7 +1,7 @@
 (() => {
   let invoke = null; // 解決済みの invoke（nullなら未解決）
   let imgW = 0, imgH = 0;
-  let useStateLutEnabled = false; // LUT in-memory 使用フラグ
+  let useStateLutEnabled = true; // LUT in-memory 使用フラグ（既定ON固定）
   let pipetteFixed = false; // スポイト固定
   let stats = null;
   let waveform = null;
@@ -249,14 +249,12 @@
     const saveBtn = getEl('save');
     const cv = getEl('cv');
     const pathEl = getEl('path');
-    // EXP/Gamma UI は廃止
-    const hqEl = getEl('hq');
-    // Advanced UI 廃止
-    const lutSize = getEl('lut-size');
-    // Clipは固定（clip）
-    const applyTransformBtn = getEl('apply-transform');
-    const clearLutBtn = getEl('clear-lut');
-    const useStateLut = getEl('use-state-lut');
+    // HQ/LUT UIは廃止（既定ON）
+    const hqEl = null;
+    const lutSize = null;
+    const applyTransformBtn = null;
+    const clearLutBtn = null;
+    const useStateLut = null;
     const addAttrBtn = getEl('add-attr');
     const progIntervalEl = getEl('progress-interval');
     const progThreshEl = getEl('progress-threshold');
@@ -266,7 +264,7 @@
     const scopeChannelEl = getEl('scope-channel');
     const scopeScaleEl = getEl('scope-scale');
 
-    useStateLutEnabled = !!useStateLut?.checked;
+    useStateLutEnabled = true;
     scopeChannelEl?.addEventListener('change', () => {
       scopeChannel = scopeChannelEl.value;
       drawHistogram(stats);
@@ -282,7 +280,7 @@
 
     // Transform 一覧ロード（Resolve風）
     const transformEl = getEl('transform');
-    const swapTransformBtn = getEl('swap-transform');
+    const swapTransformBtn = null; // Swap UI廃止
     let transforms = [];
     (async () => {
       try {
@@ -320,15 +318,16 @@
       } catch (e) { await logBoth('Transform読込失敗: ' + e); }
     })();
     if (transformEl) transformEl.addEventListener('change', async () => {
-      const t = transforms.find(x => x.label === transformEl.value);
-      if (t) await logBoth('Transform選択: ' + t.label);
-    });
-    if (swapTransformBtn) swapTransformBtn.addEventListener('click', async () => {
-      const cur = transforms.find(x => x.label === transformEl?.value);
-      if (!cur) { await logBoth('Transform未選択'); return; }
-      const rev = transforms.find(x => x.src_space === cur.dst_space && x.src_tf === cur.dst_tf && x.dst_space === cur.src_space && x.dst_tf === cur.src_tf);
-      if (rev) { transformEl.value = rev.label; await logBoth('Transform反転: ' + rev.label); transformEl.dispatchEvent(new Event('change')); }
-      else { await logBoth('Transform反転候補なし'); }
+      const tsel = transforms.find(x => x.label === transformEl.value);
+      if (!tsel) { await logBoth('Transform未選択'); return; }
+      try {
+        if (!(await ensureTauriReady())) return;
+        const size = tsel.size || 33;
+        await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: 'clip' });
+        useStateLutEnabled = true;
+        updateLater();
+        await logBoth('Transform適用: ' + tsel.label);
+      } catch (e) { appendLog('Transform適用失敗: ' + e); }
     });
 
     // Settings: 既定Transformの保存
@@ -489,26 +488,10 @@
     }
 
     const updateLater = debounce(updatePreview, 120);
-    if (useStateLut) useStateLut.addEventListener('change', () => {
-      useStateLutEnabled = !!useStateLut.checked;
-      updateLater();
-    });
 
     // LUT生成機能は削除
 
-    if (applyTransformBtn) applyTransformBtn.addEventListener('click', async () => {
-      try {
-        if (!(await ensureTauriReady())) return;
-        const selLabel = transformEl?.value;
-        const tsel = transforms.find(t => t.label === selLabel);
-        if (!tsel) { appendLog('Transform未選択'); return; }
-        const size = parseInt(lutSize?.value ?? String(tsel.size || 33),10) || (tsel.size || 33);
-        await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: 'clip' });
-        if (useStateLut) useStateLut.checked = true; useStateLutEnabled = true;
-        updateLater();
-        await logBoth('Transform適用: ' + tsel.label);
-      } catch (e) { appendLog('Preset適用失敗: ' + e); }
-    });
+    // Transform適用ボタンは廃止（変更時に自動適用）
 
     /* Preset UI 廃止
     if (lutPreset) lutPreset.addEventListener('change', async () => {
@@ -534,9 +517,7 @@
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
 
-    if (clearLutBtn) clearLutBtn.addEventListener('click', async () => {
-      try { if (!(await ensureTauriReady())) return; await invoke('clear_lut'); if (useStateLut) useStateLut.checked = false; useStateLutEnabled = false; updateLater(); appendLog('LUT解除'); } catch (e) { appendLog('解除失敗: ' + e); }
-    });
+    // LUT解除は廃止（常時メモリLUT使用）
 
     if (lutPreset) lutPreset.dispatchEvent(new Event('change'));
     */

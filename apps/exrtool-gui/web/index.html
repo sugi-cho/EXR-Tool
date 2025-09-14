@@ -27,8 +27,7 @@
         <button id="browse">開く</button>
         <input id="ocio" placeholder="OCIO config(aces1.3 or path)" size="36" />
         
-        <label><input id="hq" type="checkbox"/> High Quality</label>
-        <label><input id="use-state-lut" type="checkbox" checked/> Use LUT(in-memory)</label>
+        <!-- High Quality/Use LUT は既定ON・UI廃止 -->
         
         <button id="save">PNG書き出し</button>
         <button id="showlog">ログ表示</button>
@@ -41,11 +40,6 @@
       </div>
       <div class="toolbar">
         <label>Transform <select id="transform"></select></label>
-        <button id="swap-transform">Swap</button>
-        
-        
-        <button id="apply-transform">Transform適用(メモリ)</button>
-        <button id="clear-lut">LUT解除</button>
       </div>
       <div class="info" id="info">-</div>
     </header>
