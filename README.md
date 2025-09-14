@@ -3,8 +3,8 @@
 EXR の高速プレビュー／LUT適用／簡易編集ツールです。Rust コア（`exrtool-core`）と Tauri GUI（`exrtool-gui`）、CLI（`exrtool-cli`）で構成します。
 
 主な機能
-- プレビュー生成（露出・ガンマ・sRGB）/ 高品質リサイズ（Lanczos 切替）
-- LUT（.cube）適用（1D/3D、プリセット読込・ワンクリック適用）
+- プレビュー生成（sRGBプレビュー）/ 高品質リサイズ（既定ON・Lanczos）
+- Transform（LUT相当）適用（プリセット一覧から選択で自動適用）
 - ピクセル検査（リニア値、スポイト固定・クリップボードコピー）
 - メタデータ閲覧/編集（feature `use_exr_crate`）
 - 一括適用（ルール定義 → CLI `apply`）
@@ -52,6 +52,12 @@ cargo run -p exrtool-cli -- apply --rules docs/rules.yml --dry-run false --backu
 cargo run -p exrtool-cli -- fps-set --input "C:\\path\\to\\frame.exr" --fps 24 --dry-run false --backup true
 ```
 
+## GUIの仕様（簡易）
+
+- GUIでは外部 `.cube` 読み込みを廃止しました。Transformプリセットを選ぶと自動で in-memory LUT を適用します（常時有効）。
+- プレビューは常に高品質（HQ）で生成されます。UI上のHQ切替はありません。
+- Transformの「Swap/適用/解除」ボタンは廃止し、選択変更で即時適用されます。
+
 ## Video Tools（GUI）
 
 - Set FPS（連番EXRのFPS属性を書き込み）
@@ -74,7 +80,7 @@ cargo run -p exrtool-cli -- fps-set --input "C:\\path\\to\\frame.exr" --fps 24 -
 - 失敗時は元ファイルを保持します。`--backup`/GUIのバックアップON時は `*.exr.bak` も残ります。
 
 補足
-- LUT プリセットは `config/luts.presets.json` をロードします
+- Transform プリセットは `config/transforms.json`（存在しない場合は既定リスト）と `config/luts.presets.json`（一部機能）をロードします
 - 仕様やアルゴリズムの背景は [docs/LUT.md](docs/LUT.md) を参照
 - GUI 操作ガイドは [docs/GUI_GUIDE.md](docs/GUI_GUIDE.md) を参照（スクリーンショットは `docs/img/`）
 
