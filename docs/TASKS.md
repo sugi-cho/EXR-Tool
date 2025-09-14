@@ -25,37 +25,49 @@
 - [x] ベンチマーク: `benches/lut_gen.rs`（17/33/65計測）
 - [ ] 生成進捗UI（プログレス/キャンセル）
 
+4) 連番EXR（動画化/メタ情報）
+- [ ] CLI: 連番EXRのFPS一括設定（メタデータ属性を書き込み）
+  - コマンド: `exrtool seq-fps --dir <folder> --fps 24 --attr FramesPerSecond --recursive --dry-run --backup`
+  - 仕様: `FramesPerSecond` を float 属性で保存（将来 rational 対応）。`use_exr_crate` 必須。
+  - 検出: `<name>_####.exr` / `<name>.<####>.exr` / 任意0埋めを自然順にソート
+- [ ] CLI: 連番EXR→ProRes 動画化（色空間変換選択可）
+  - 例: `exrtool prores --dir <folder> --fps 24 --colorspace linear:srgb --out out.mov --profile 422hq`
+  - 依存: `ffmpeg`（存在チェック。未導入時はガイド）
+  - 実装: EXR→sRGB 画像を生成し `ffmpeg -f image2pipe` にパイプ入力（将来10bit最適化）
+  - 変換: `linear:srgb`, `acescg:srgb`, `aces2065:srgb`（既存LUT/3D LUTを内部適用）
+- [ ] GUI: 「動画化」パネル（フォルダ選択/FPS/色空間/出力/進捗/キャンセル）
+
 ## 次点（P1）
 
-4) プレビュー品質と操作性
+5) プレビュー品質と操作性
 - [x] リサイズ: Lanczos 追加（HQ/標準切替）
 - [x] トーンマッピング（ACES/Filmic）
 - [x] ヒストグラム（簡易）／ [ ] 波形モニタ（未）
 
-5) メタデータの表示と編集（段階導入）
+6) メタデータの表示と編集（段階導入）
 - [x] コア: `read_metadata(path)`（`use_exr_crate` 有効時）
 - [x] 型: Variant 化（基本型／未対応は Opaque）
 - [x] GUI: 属性テーブル（閲覧・編集・追加/削除・差分表示）
 - [x] 書出: 非破壊保存（別名）
 
-6) 一括編集（最低限）
+7) 一括編集（最低限）
 - [x] ルール定義（YAML/JSON）: set/unset/copy/from filename
 - [x] CLI: `exrtool apply --preset rules.yml --dry-run --backup`
 - [x] ログ: CSV/JSON 出力（処理記録）
 
 ## 将来（P2）
 
-7) OCIO 連携（実験的 / feature `use_ocio`）
+8) OCIO 連携（実験的 / feature `use_ocio`）
 - [x] C API バインディング（安全ラッパ層）
 - [x] コンフィグ読込・切替（ACES 1.3 等）
 - [ ] Display/View/LUTチェインのGUI編集（未）
 
-8) 配布/CI
+9) 配布/CI
 - [x] GitHub Actions: CLI/GUI のビルド（Win/macOS/Linux）（担当: cloud-codex / 状態: 完了）
 - [ ] Windows: MSIX/MSI、macOS: notarize、Linux: AppImage
 - [ ] クラッシュ/使用ログ（匿名）オプション
 
-9) 品質・保守
+10) 品質・保守
 - [x] exrtool-core のユニットテスト（gamma/LUT/マトリクス）
 - [x] ドキュメント: `docs/LUT.md`
 - [x] `cargo fix`/clippy 警告削減、fmt/lint（継続改善）
