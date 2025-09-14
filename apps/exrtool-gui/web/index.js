@@ -263,12 +263,14 @@
         if (!(await ensureTauriReady())) return;
         const maxEl = getEl('max');
         const lutEl = getEl('lut');
+        const hqEl = getEl('hq');
         const [w,h,b64] = await invoke('update_preview', {
           maxSize: parseInt(maxEl?.value ?? '2048',10) || 2048,
           exposure: parseFloat(expEl?.value ?? '0'),
           gamma: parseFloat(gammaEl?.value ?? '2.2'),
           lutPath: (lutEl && lutEl.value.trim() && !useStateLutEnabled) ? lutEl.value.trim() : null,
           useStateLut: useStateLutEnabled,
+          highQuality: !!(hqEl?.checked)
         });
         const img = new Image();
         const info = getEl('info');
@@ -306,7 +308,6 @@
         const src = (lutSrc?.value || 'linear').toLowerCase();
         const dst = (lutDst?.value || 'srgb').toLowerCase();
         const size = parseInt(lutSize?.value ?? '1024',10) || 1024;
-        const clip = (lutClip?.value || 'clip').toLowerCase();
         if (src === 'linear' || src === 'srgb') {
           // 1D LUT
           await invoke('make_lut', { src, dst, size, outPath: out });
@@ -314,7 +315,7 @@
         } else {
           // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
           // トーンは src: linear, dst: srgb を既定とする。
-          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), clipMode: clip, outPath: out });
+          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: 'srgb', size: Math.max(17, Math.min(65, size)), outPath: out });
           appendLog('3D LUT生成: ' + out);
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }

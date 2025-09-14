@@ -36,7 +36,7 @@ struct LutPreset {
     dst_space: String,
     dst_tf: String,
     size: u32,
-}
+} 
 
 struct PresetState {
     presets: Vec<LutPreset>,
@@ -478,6 +478,30 @@ fn clear_lut(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<(), String
 }
 
 #[tauri::command]
+fn read_metadata(path: String) -> Result<Vec<(String, String)>, String> {
+    let p = std::path::Path::new(&path);
+    // try core's read_metadata (works when feature `use_exr_crate` is enabled)
+    match exrtool_core::read_metadata(p) {
+        Ok(meta) => {
+            // Flatten headers into key-value pairs for simple display
+            let mut out: Vec<(String, String)> = Vec::new();
+            for (i, h) in meta.headers.iter().enumerate() {
+                out.push((format!("header{}.layer_name", i), h.layer_name.clone().unwrap_or_default()));
+                out.push((format!("header{}.layer_pos", i), format!("{},{}", h.layer_position.0, h.layer_position.1)));
+                out.push((format!("header{}.layer_size", i), format!("{}x{}", h.layer_size.0, h.layer_size.1)));
+                out.push((format!("header{}.pixel_aspect", i), format!("{}", h.pixel_aspect)));
+                out.push((format!("header{}.line_order", i), h.line_order.clone()));
+            }
+            Ok(out)
+        }
+        Err(_e) => {
+            // Feature未有効など。空で返却（フロントはログに記録）
+            Ok(Vec::new())
+        }
+    }
+}
+
+#[tauri::command]
 fn make_lut(src: String, dst: String, size: u32, out_path: String) -> Result<(), String> {
     use exrtool_core::{make_1d_lut, ColorSpace};
     let parse = |s: &str| -> Result<ColorSpace, String> {
@@ -575,7 +599,8 @@ fn main() {
             set_lut_1d,
             set_lut_3d,
             clear_lut,
-            lut_presets
+            lut_presets,
+            read_metadata
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
