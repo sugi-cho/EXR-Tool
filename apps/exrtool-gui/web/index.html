@@ -62,6 +62,8 @@
           </select>
         </label>
         <button id="make-lut">LUT生成(.cube)</button>
+        <button id="cancel-lut" style="display:none;">キャンセル</button>
+        <progress id="lut-progress" max="100" value="0" style="width:120px; display:none;"></progress>
         <button id="apply-preset">Preset適用(メモリ)</button>
         <button id="clear-lut">LUT解除</button>
       </div>
@@ -98,6 +100,7 @@
         <label><input id="seq-fps-recursive" type="checkbox"/> Recursive</label>
         <label><input id="seq-fps-dryrun" type="checkbox"/> Dry Run</label>
         <button id="apply-fps">Apply FPS</button>
+        <button id="cancel-fps" style="display:none;">Cancel</button>
         <progress id="seq-progress" max="100" value="0" style="width: 100%; display:none;"></progress>
         <small>Note: requires GUI build with feature exr_pure.</small>
       </fieldset>
