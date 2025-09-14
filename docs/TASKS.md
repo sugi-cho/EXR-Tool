@@ -26,16 +26,13 @@
 - [ ] 生成進捗UI（プログレス/キャンセル）
 
 4) 連番EXR（動画化/メタ情報）
-- [ ] CLI: 連番EXRのFPS一括設定（メタデータ属性を書き込み）
-  - コマンド: `exrtool seq-fps --dir <folder> --fps 24 --attr FramesPerSecond --recursive --dry-run --backup`
-  - 仕様: `FramesPerSecond` を float 属性で保存（将来 rational 対応）。`use_exr_crate` 必須。
-  - 検出: `<name>_####.exr` / `<name>.<####>.exr` / 任意0埋めを自然順にソート
-- [ ] CLI: 連番EXR→ProRes 動画化（色空間変換選択可）
-  - 例: `exrtool prores --dir <folder> --fps 24 --colorspace linear:srgb --out out.mov --profile 422hq`
-  - 依存: `ffmpeg`（存在チェック。未導入時はガイド）
-  - 実装: EXR→sRGB 画像を生成し `ffmpeg -f image2pipe` にパイプ入力（将来10bit最適化）
-  - 変換: `linear:srgb`, `acescg:srgb`, `aces2065:srgb`（既存LUT/3D LUTを内部適用）
-- [ ] GUI: 「動画化」パネル（フォルダ選択/FPS/色空間/出力/進捗/キャンセル）
+- [x] GUI: FPS一括設定（`FramesPerSecond` 書込み、`exr_pure` 有効時）
+  - [x] 進捗バー（`seq-progress`）/ バックグラウンド実行（UIフリーズ防止）
+  - [x] バックアップ作成（`*.exr.bak`）/ 全件成功時のみ自動削除
+  - [x] 重複属性対策（トップ/レイヤー0集約）/ 安全保存（tmp→置換）
+- [x] GUI: 連番EXR→ProRes 書出し（`ffmpeg` 必要、進捗 `video-progress`）
+- [ ] CLI: 連番EXRのFPS一括設定（将来公開、GUI 実装をCLIへ移植）
+- [ ] CLI: 連番EXR→ProRes 動画化（将来公開）
 
 ## 次点（P1）
 
@@ -71,6 +68,11 @@
 - [x] exrtool-core のユニットテスト（gamma/LUT/マトリクス）
 - [x] ドキュメント: `docs/LUT.md`
 - [x] `cargo fix`/clippy 警告削減、fmt/lint（継続改善）
+
+11) Video Tools 継続改善
+- [ ] FPS設定: キャンセルボタン（進捗イベントと連動）
+- [ ] 進捗スロットリング設定のUI化（既定: 100ms/0.5%）
+- [ ] エラーレポート集計（成功/失敗件数をダイアログ表示）
 
 ---
 
