@@ -154,20 +154,22 @@
     // Tabs
     const tabBtnPreview = document.getElementById('tab-btn-preview');
     const tabBtnVideo = document.getElementById('tab-btn-video');
+    const tabBtnSettings = document.getElementById('tab-btn-settings');
     const tabPreview = document.getElementById('tab-preview');
     const tabVideo = document.getElementById('tab-video');
+    const tabSettings = document.getElementById('tab-settings');
     function activate(tab){
-      if (!tabPreview || !tabVideo) return;
-      if (tab === 'video') {
-        tabPreview.style.display = 'none'; tabVideo.style.display = 'block';
-        tabBtnVideo?.classList.add('active'); tabBtnPreview?.classList.remove('active');
-      } else {
-        tabPreview.style.display = 'block'; tabVideo.style.display = 'none';
-        tabBtnPreview?.classList.add('active'); tabBtnVideo?.classList.remove('active');
-      }
+      if (!tabPreview || !tabVideo || !tabSettings) return;
+      tabPreview.style.display = (tab === 'preview') ? 'block' : 'none';
+      tabVideo.style.display = (tab === 'video') ? 'block' : 'none';
+      tabSettings.style.display = (tab === 'settings') ? 'block' : 'none';
+      tabBtnPreview?.classList.toggle('active', tab === 'preview');
+      tabBtnVideo?.classList.toggle('active', tab === 'video');
+      tabBtnSettings?.classList.toggle('active', tab === 'settings');
     }
     tabBtnPreview?.addEventListener('click', ()=>{ logBoth('tab: preview'); activate('preview'); });
     tabBtnVideo?.addEventListener('click', ()=>{ logBoth('tab: video'); activate('video'); });
+    tabBtnSettings?.addEventListener('click', ()=>{ logBoth('tab: settings'); activate('settings'); });
     logBoth('boot: video controls present? browse-seq=' + (!!document.getElementById('browse-seq')) + ', browse-prores-out=' + (!!document.getElementById('browse-prores-out')));
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
@@ -187,11 +189,41 @@
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
     const addAttrBtn = getEl('add-attr');
+    const progIntervalEl = getEl('progress-interval');
+    const progThreshEl = getEl('progress-threshold');
+    const logConsentEl = getEl('log-consent');
     attrTable = getEl('attr-table');
 
     useStateLutEnabled = !!useStateLut?.checked;
 
     if (openBtn) openBtn.addEventListener('click', openExr);
+
+    // load config
+    (async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const [ms, pct] = await invoke('get_progress_config');
+        if (progIntervalEl) progIntervalEl.value = ms;
+        if (progThreshEl) progThreshEl.value = pct;
+        const allow = await invoke('get_log_permission');
+        if (logConsentEl) logConsentEl.checked = allow;
+      } catch (_) {}
+    })();
+
+    logConsentEl?.addEventListener('change', async () => {
+      try { if (invoke || await ensureTauriReady()) { await invoke('set_log_permission', { allow: !!logConsentEl.checked }); } } catch (_) {}
+    });
+
+    const saveProgress = debounce(async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const ms = parseInt(progIntervalEl?.value ?? '100', 10) || 0;
+        const pct = parseFloat(progThreshEl?.value ?? '0.5') || 0;
+        await invoke('set_progress_config', { intervalMs: ms, pctThreshold: pct });
+      } catch (_) {}
+    }, 500);
+    progIntervalEl?.addEventListener('input', saveProgress);
+    progThreshEl?.addEventListener('input', saveProgress);
 
     if (browseBtn) browseBtn.addEventListener('click', async () => {
       try {
