@@ -118,7 +118,7 @@ pub fn read_metadata(path: &Path) -> Result<ExrMetadata> {
                 h.own_attributes.layer_position.0,
                 h.own_attributes.layer_position.1,
             ),
-            layer_size: (h.layer_size.0, h.layer_size.1),
+            layer_size: (h.layer_size.0 as u32, h.layer_size.1 as u32),
             pixel_aspect: h.shared_attributes.pixel_aspect,
             line_order: format!("{:?}", h.line_order),
         })
