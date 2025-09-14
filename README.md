@@ -48,6 +48,9 @@ cargo run -p exrtool-cli -- make-lut3d --src-space acescg --src-tf linear --dst-
 # ルールに基づく一括適用（PNG書出し）。dry-run/backup対応
 cargo run -p exrtool-cli -- apply --rules docs/rules.yml --dry-run false --backup true
 
+# 単一EXRのFPS属性を設定（FramesPerSecond, backupあり）
+cargo run -p exrtool-cli -- fps-set --input "C:\\path\\to\\frame.exr" --fps 24 --dry-run false --backup true
+
 # 連番EXRから動画を生成（ffmpegが必要）
 cargo run -p exrtool-cli -- prores --dir frames --out movie.mov --fps 24 --codec prores_ks --profile 422hq
 ```
