@@ -42,8 +42,11 @@
         <button id="apply-ocio">Apply</button>
       </div>
       <div class="toolbar">
-        <label>Make LUT: 元<select id="lut-src"><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
-        <label>→ 先<select id="lut-dst"><option>srgb</option><option>g22</option><option>g24</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
+        <label>Transform <select id="transform"></select></label>
+        <button id="swap-transform">Swap</button>
+        <span style="opacity:.7;">/ Advanced</span>
+        <label style="opacity:.7;">元<select id="lut-src" disabled><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
+        <label style="opacity:.7;">→ 先<select id="lut-dst" disabled><option>srgb</option><option>g22</option><option>g24</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
         <label>Preset
           <select id="lut-preset">

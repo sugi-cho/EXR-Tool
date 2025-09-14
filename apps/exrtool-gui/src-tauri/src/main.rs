@@ -35,6 +35,19 @@ struct PresetState {
     presets: Vec<LutPreset>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct TransformPreset {
+    label: String,
+    src_space: String,
+    src_tf: String,
+    dst_space: String,
+    dst_tf: String,
+    #[serde(default)]
+    size: Option<u32>,
+    #[serde(default)]
+    group: Option<String>,
+}
+
 struct AppState {
     image: Option<LoadedExr>,
     preview: Option<PreviewImage>,
@@ -466,6 +479,24 @@ fn log_append(msg: &str) {
     }
 }
 
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            *s
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.as_str()
+        } else {
+            "<non-string panic>"
+        };
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown>".into());
+        let line = format!("PANIC: {} @ {}", payload, loc);
+        log_append(&line);
+    }));
+}
+
 fn generate_preview_progress(
     img: &LoadedExr,
     max_size: u32,
@@ -773,6 +804,24 @@ fn lut_presets(state: tauri::State<'_, PresetState>) -> Result<Vec<LutPreset>, S
 }
 
 #[tauri::command]
+fn transform_presets() -> Result<Vec<TransformPreset>, String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../config/transforms.json");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        serde_json::from_str::<Vec<TransformPreset>>(&text).map_err(|e| e.to_string())
+    } else {
+        Ok(vec![
+            TransformPreset { label: "Linear to Gamma 2.2".into(), src_space: "linear".into(), src_tf: "linear".into(), dst_space: "linear".into(), dst_tf: "g22".into(), size: Some(33), group: Some("Gamma".into()) },
+            TransformPreset { label: "Linear to Gamma 2.4".into(), src_space: "linear".into(), src_tf: "linear".into(), dst_space: "linear".into(), dst_tf: "g24".into(), size: Some(33), group: Some("Gamma".into()) },
+            TransformPreset { label: "Gamma 2.2 to Linear".into(), src_space: "linear".into(), src_tf: "g22".into(), dst_space: "linear".into(), dst_tf: "linear".into(), size: Some(33), group: Some("Gamma".into()) },
+            TransformPreset { label: "Linear to sRGB".into(), src_space: "linear".into(), src_tf: "linear".into(), dst_space: "srgb".into(), dst_tf: "srgb".into(), size: Some(33), group: Some("Display".into()) },
+            TransformPreset { label: "sRGB to Linear".into(), src_space: "srgb".into(), src_tf: "srgb".into(), dst_space: "linear".into(), dst_tf: "linear".into(), size: Some(33), group: Some("Display".into()) },
+            TransformPreset { label: "Linear to ACEScg".into(), src_space: "linear".into(), src_tf: "linear".into(), dst_space: "acescg".into(), dst_tf: "linear".into(), size: Some(33), group: Some("ACES".into()) },
+            TransformPreset { label: "ACEScg to sRGB".into(), src_space: "acescg".into(), src_tf: "linear".into(), dst_space: "srgb".into(), dst_tf: "srgb".into(), size: Some(33), group: Some("ACES".into()) },
+        ])
+    }
+}
+
+#[tauri::command]
 fn get_log_permission(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<bool, String> {
     Ok(state.lock().allow_send)
 }
@@ -1068,6 +1117,8 @@ fn export_prores(
 }
 
 fn main() {
+    install_panic_hook();
+    log_append("boot: starting tauri builder");
     let preset_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../config/luts.presets.json");
     let presets: Vec<LutPreset> = std::fs::read_to_string(&preset_path)
@@ -1081,12 +1132,14 @@ fn main() {
 
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(app_state)))
+        .manage(cfg_state)
         .manage(Arc::new(OpenProgress::default()))
         .manage(Arc::new(SeqFpsProgress::default()))
         .manage(PresetState { presets })
         .invoke_handler(tauri::generate_handler![
             open_exr,
             update_preview,
+            transform_presets,
             image_stats,
             image_waveform,
             probe_pixel,

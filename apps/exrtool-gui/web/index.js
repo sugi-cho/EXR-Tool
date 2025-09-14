@@ -452,45 +452,24 @@
         const out = prompt('生成する .cube の保存先パス:', 'linear_to_srgb.cube');
         if (!out) return;
         if (!(await ensureTauriReady())) return;
-        const src = (lutSrc?.value || 'linear').toLowerCase();
-        const dst = (lutDst?.value || 'srgb').toLowerCase();
-        const size = parseInt(lutSize?.value ?? '1024',10) || 1024;
-        if (src === 'linear' || src === 'srgb') {
-          // 1D LUT
-          await invoke('make_lut', { src, dst, size, outPath: out });
-          appendLog('1D LUT生成: ' + out);
+        const selLabel = transformEl?.value;
+        const tsel = transforms.find(t => t.label === selLabel);
+        if (!tsel) { appendLog('Transform未選択'); return; }
+        const size = parseInt(lutSize?.value ?? String(tsel.size || 33),10) || (tsel.size || 33);
+        const t = window.__TAURI__;
+        if (t && t.event && t.event.listen && lutProg && cancelLutBtn) {
+          lutProg.style.display = 'inline'; lutProg.value = 0; cancelLutBtn.style.display = 'inline';
+          const unlisten = await t.event.listen('lut-progress', e => { try { lutProg.value = e.payload; } catch(_){} });
+          const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
+          cancelLutBtn.addEventListener('click', cancelHandler);
+          try {
+            await invoke('make_lut3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), outPath: out });
+            appendLog('3D LUT生成: ' + tsel.label + ' -> ' + out);
+          } catch (e) { appendLog('LUT生成失敗: ' + e); }
+          finally { unlisten(); cancelLutBtn.removeEventListener('click', cancelHandler); lutProg.style.display = 'none'; cancelLutBtn.style.display = 'none'; }
         } else {
-          // 3D LUT (色域+トーン変換)。src/dstを primaries として扱い、
-          // トーンは src: linear, dst: srgb を既定とする。
-          const t = window.__TAURI__;
-          if (t && t.event && t.event.listen && lutProg && cancelLutBtn) {
-            lutProg.style.display = 'inline';
-            lutProg.value = 0;
-            cancelLutBtn.style.display = 'inline';
-            const unlisten = await t.event.listen('lut-progress', e => { try { lutProg.value = e.payload; } catch(_){} });
-            const cancelHandler = () => { try { t.event.emit('lut-cancel'); } catch(_){} };
-            cancelLutBtn.addEventListener('click', cancelHandler);
-            try {
-          const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
-          await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), outPath: out });
-              appendLog('3D LUT生成: ' + out);
-            } catch (e) {
-              if (String(e).includes('cancelled')) {
-                appendLog('LUT生成キャンセル');
-              } else {
-                appendLog('LUT生成失敗: ' + e);
-              }
-            } finally {
-              unlisten();
-              cancelLutBtn.removeEventListener('click', cancelHandler);
-              lutProg.style.display = 'none';
-              cancelLutBtn.style.display = 'none';
-            }
-          } else {
-            const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
-            await invoke('make_lut3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), outPath: out });
-            appendLog('3D LUT生成: ' + out);
-          }
+          await invoke('make_lut3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), outPath: out });
+          appendLog('3D LUT生成: ' + tsel.label + ' -> ' + out);
         }
       } catch (e) { appendLog('LUT生成失敗: ' + e); }
     });
@@ -498,23 +477,15 @@
     if (applyPresetBtn) applyPresetBtn.addEventListener('click', async () => {
       try {
         if (!(await ensureTauriReady())) return;
-        const src = (lutSrc?.value || 'linear').toLowerCase();
-        const dst = (lutDst?.value || 'srgb').toLowerCase();
-        const size = ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb'))
-          ? (parseInt(lutSize?.value ?? '1024',10) || 1024)
-          : (parseInt(lutSize?.value ?? '33',10) || 33);
+        const selLabel = transformEl?.value;
+        const tsel = transforms.find(t => t.label === selLabel);
+        if (!tsel) { appendLog('Transform未選択'); return; }
+        const size = parseInt(lutSize?.value ?? String(tsel.size || 33),10) || (tsel.size || 33);
         const clip = (lutClip?.value || 'clip').toLowerCase();
-        if ((src === 'linear' || src === 'srgb') && (dst === 'linear' || dst === 'srgb')) {
-          await invoke('set_lut_1d', { src, dst, size });
-        } else {
-          // TauriはRustの`clip_mode`引数に対してcamelCaseキー`clipMode`を受け取る
-          const dstTf = (dst === 'srgb') ? 'srgb' : (dst === 'g22' ? 'g22' : (dst === 'g24' ? 'g24' : 'linear'));
-          await invoke('set_lut_3d', { srcSpace: src, srcTf: 'linear', dstSpace: dst, dstTf: dstTf, size: Math.max(17, Math.min(65, size)), clipMode: clip });
-        }
-        if (useStateLut) useStateLut.checked = true;
-        useStateLutEnabled = true;
+        await invoke('set_lut_3d', { srcSpace: tsel.src_space, srcTf: tsel.src_tf, dstSpace: tsel.dst_space, dstTf: tsel.dst_tf, size: Math.max(17, Math.min(65, size)), clipMode: clip });
+        if (useStateLut) useStateLut.checked = true; useStateLutEnabled = true;
         updateLater();
-        appendLog('Preset適用: ' + src + ' -> ' + dst);
+        appendLog('Transform適用: ' + tsel.label);
       } catch (e) { appendLog('Preset適用失敗: ' + e); }
     });
 
