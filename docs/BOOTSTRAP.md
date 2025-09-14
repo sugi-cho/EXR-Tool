@@ -19,6 +19,12 @@ cd apps/exrtool-gui/src-tauri
 cargo tauri dev
 ```
 
+注: Video Tools（FPS設定/ProRes）を使う場合は、EXRメタデータ機能を含むビルドが必要です。
+
+```
+cargo tauri dev -- -F exr_pure
+```
+
 4. CLI の実行例
 
 ```
@@ -43,6 +49,7 @@ cargo run -p exrtool-cli -- preview "C:\\path\\to\\input.exr" -o preview.png --m
 - link.exe や cl.exe が無い → VS 2022 Build Tools (C++/Windows SDK) の導入が必要です
 - WebView2 runtime が無い → `winget install -e --id Microsoft.EdgeWebView2Runtime`
 - `cargo tauri dev -p ...` は不可 → `apps/exrtool-gui/src-tauri` に移動して `cargo tauri dev`
+- ProRes 書き出しでエラー → `ffmpeg` を導入し PATH を通してください（Windows 例: `winget install -e --id Gyan.FFmpeg`）
 
 ## オプション機能（feature）
 
@@ -53,3 +60,7 @@ cargo run -p exrtool-cli -- preview "C:\\path\\to\\input.exr" -o preview.png --m
   - Windows の場合は vcpkg/conda 等で OCIO を導入し、`LIBCLANG_PATH` を設定
   - 有効化例: `cargo build -p exrtool-core --features use_ocio`
   - feature 無効時は build.rs が自動的にスキップされます
+
+### GUI機能フラグ（apps/exrtool-gui）
+- `exr_pure`: 連番EXRのFPS設定（メタデータ書込み）を有効化。
+  - 例: `cargo tauri dev -- -F exr_pure`
