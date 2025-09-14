@@ -254,18 +254,16 @@
     const saveBtn = getEl('save');
     const cv = getEl('cv');
     const pathEl = getEl('path');
-    const expEl = getEl('exp');
-    const gammaEl = getEl('gamma');
+    // EXP/Gamma UI は廃止
     const hqEl = getEl('hq');
-    const lutSrc = getEl('lut-src');
-    const lutDst = getEl('lut-dst');
+    // Advanced UI 廃止
     const lutSize = getEl('lut-size');
     const lutClip = getEl('lut-clip');
-    const lutPreset = getEl('lut-preset');
+    // Preset UI 廃止
     const makeLutBtn = getEl('make-lut');
     const cancelLutBtn = getEl('cancel-lut');
     const lutProg = getEl('lut-progress');
-    const applyPresetBtn = getEl('apply-preset');
+    const applyTransformBtn = getEl('apply-transform');
     const clearLutBtn = getEl('clear-lut');
     const useStateLut = getEl('use-state-lut');
     const addAttrBtn = getEl('add-attr');

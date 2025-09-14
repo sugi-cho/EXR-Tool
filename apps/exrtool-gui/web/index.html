@@ -44,19 +44,7 @@
       <div class="toolbar">
         <label>Transform <select id="transform"></select></label>
         <button id="swap-transform">Swap</button>
-        <span style="opacity:.7;">/ Advanced</span>
-        <label style="opacity:.7;">元<select id="lut-src" disabled><option>linear</option><option>srgb</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
-        <label style="opacity:.7;">→ 先<select id="lut-dst" disabled><option>srgb</option><option>g22</option><option>g24</option><option>linear</option><option>acescg</option><option>rec2020</option><option>aces2065</option></select></label>
         <label>Size <input id="lut-size" type="number" value="33" min="17" max="65" step="1"/></label>
-        <label>Preset
-          <select id="lut-preset">
-            <option value="">-</option>
-            <option value="linear-srgb" selected>Linear → sRGB (1D)</option>
-            <option value="acescg-srgb">ACEScg → sRGB</option>
-            <option value="aces2065-srgb">ACES2065-1 → sRGB</option>
-            <option value="srgb-acescg">sRGB → ACEScg</option>
-          </select>
-        </label>
         <label>Clip
           <select id="lut-clip">
             <option value="clip" selected>Clip</option>
@@ -66,7 +54,7 @@
         <button id="make-lut">LUT生成(.cube)</button>
         <button id="cancel-lut" style="display:none;">キャンセル</button>
         <progress id="lut-progress" max="100" value="0" style="width:120px; display:none;"></progress>
-        <button id="apply-preset">Preset適用(メモリ)</button>
+        <button id="apply-transform">Transform適用(メモリ)</button>
         <button id="clear-lut">LUT解除</button>
       </div>
       <div class="info" id="info">-</div>
