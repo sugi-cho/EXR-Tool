@@ -26,13 +26,13 @@
 - [ ] 生成進捗UI（プログレス/キャンセル）
 
 4) UIモダン化（Preview統合／メタデータ編集撤退）
-- （担当: cloud-codex / 状態: 着手・ドラフト作成 2025-09-15）
+- （担当: cloud-codex / 状態: ドキュメント更新完了 2025-09-14）
   - [ ] タブ統合: `Preview` と `Video` を統合し、単一のプレビュービューで連番EXRの再生・確認を行う
   - [ ] 連番プレビュー: タイムライン／再生・一時停止／フレーム番号表示（単一EXRも同UIで表示）
   - [ ] エクスポート: 右パネル下部に「Export as Video」を配置（ProRes書き出し／FPS指定はここで実施）
     - [x] メタデータ: 編集UI（属性テーブルの追加・編集・削除）を撤去し、Infoタブは閲覧専用へ変更
   - [ ] 既存機能の移設: `seq_fps` / `export_prores` のイベント配線を統合後のUIへ移行
-  - [ ] ドキュメント更新: `uiUpdate/UIUX_DesignDocumentForExrTool.md` とモック `uiUpdate/ModernUIMockup.html` に方針反映
+  - [x] ドキュメント更新: `uiUpdate/UIUX_DesignDocumentForExrTool.md` とモック `uiUpdate/ModernUIMockup.html` に方針反映
   - [ ] 受け入れ基準（DoD）:
         1) 1枚EXR/連番EXRが同一プレビューで再生・スクラブ可能
         2) プレビュー画面からProRes書き出し完了まで到達

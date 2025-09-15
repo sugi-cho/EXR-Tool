@@ -6,7 +6,7 @@ EXR の高速プレビュー／LUT適用／簡易編集ツールです。Rust �
 - プレビュー生成（sRGBプレビュー）/ 高品質リサイズ（既定ON・Lanczos）
 - Transform（LUT相当）適用（プリセット一覧から選択で自動適用）
 - ピクセル検査（リニア値、スポイト固定・クリップボードコピー）
-- メタデータ閲覧/編集（feature `use_exr_crate`）
+- メタデータ閲覧（feature `use_exr_crate`）
 - 一括適用（ルール定義 → CLI `apply`）
  - 連番EXRツール（GUI）: FPS一括設定（進捗バー付き・バックアップ作成、成功時に自動削除）、ProRes書き出し（進捗バー）
 
@@ -57,15 +57,19 @@ cargo run -p exrtool-cli -- fps-set --input "C:\\path\\to\\frame.exr" --fps 24 -
 - GUIでは外部 `.cube` 読み込みを廃止しました。Transformプリセットを選ぶと自動で in-memory LUT を適用します（常時有効）。
 - プレビューは常に高品質（HQ）で生成されます。UI上のHQ切替はありません。
 - Transformの「Swap/適用/解除」ボタンは廃止し、選択変更で即時適用されます。
+- 単一EXRと連番EXRは統合プレビューパネルで再生でき、下部のタイムラインからフレームをスクラブできます。
+- 右パネル下部に「Export as Video」セクションを常設し、連番EXRから直接ProResなどに書き出せます。
+- Infoタブはメタデータの閲覧専用で、編集機能は提供されません。
 
-## Video Tools（GUI）
+## 統合プレビューと動画書き出し（GUI）
 
 - Set FPS（連番EXRのFPS属性を書き込み）
-  - Videoタブ → Sequence Folder を選択 → FPS/Attribute（既定: `FramesPerSecond`）を指定 → Apply FPS。
+  - Sequence Folder を選択 → FPS/Attribute（既定: `FramesPerSecond`）を指定 → Apply FPS。
   - Dry Run: 対象件数のみ算出（プログレスは即100%）。
   - 実行時: `*.exr.bak` を作成し、安全に書き換え。全件成功時のみバックアップを自動削除。失敗があればバックアップは保持。
   - 進捗: `seq-progress` イベントで0→100%を更新（UIフリーズ防止のためバックグラウンド処理＋スロットリング済み）。
 - Export ProRes（EXR連番→ProRes MOV）
+  - 連番EXRをプレビューした状態で、右パネル下部「Export as Video」からコーデックとFPSを指定して書き出します。
   - 依存: `ffmpeg` が PATH 上に必要です。未導入時はエラー表示。
   - Colorspace: `linear:srgb`/`acescg:srgb`/`aces2065:srgb` を選択可能。
   - 進捗: `video-progress` イベントで0→100%を表示。
