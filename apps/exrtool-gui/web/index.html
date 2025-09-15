@@ -30,8 +30,6 @@
 
         <!-- High Quality/Use LUT は既定ON・UI廃止 -->
 
-        <button id="showlog">ログ表示</button>
-        <button id="clearlog">ログ消去</button>
       </div>
       <div id="ocio-settings" class="toolbar" style="display:none;">
         <label>Display <select id="ocio-display"></select></label>
@@ -89,6 +87,10 @@
           <div class="readout" id="readout">x: -, y: -, linear: -</div>
         </section>
         <section id="side-tab-info" style="display:none;">
+          <div class="toolbar" style="margin-bottom:8px;">
+            <button id="showlog">ログ表示</button>
+            <button id="clearlog">ログ消去</button>
+          </div>
           <pre id="logbox" class="logbox"></pre>
           <div id="attrs">
             <h2>Attributes</h2>
