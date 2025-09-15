@@ -11,6 +11,10 @@
   let waveform = null;
   let scopeChannel = 'rgb';
   let scopeScale = 1;
+  let framePaths = [];
+  let currentFrame = 0;
+  let playTimer = null;
+  const PLAY_FPS = 24;
 
   // 簡易デバウンス
   function debounce(fn, ms) {
@@ -76,6 +80,105 @@
     }
     appendLog('Tauri API 解決に失敗');
     return false;
+  }
+
+  async function detectSequence(path) {
+    const m = path.match(/^(.*[\\\/])([^\\\/]*?)(\d+)(\.exr)$/i);
+    if (!m) return [path];
+    const dir = m[1];
+    const prefix = m[2];
+    const ext = m[4];
+    try {
+      if (!(await ensureTauriReady())) return [path];
+      const fs = window.__TAURI__ && window.__TAURI__.fs;
+      if (!fs || !fs.readDir) return [path];
+      const entries = await fs.readDir(dir);
+      const files = entries
+        .filter(e => !e.children && e.name && e.name.startsWith(prefix) && e.name.endsWith(ext))
+        .map(e => e.path || (dir + e.name));
+      files.sort((a,b)=>{
+        const ma = a.match(/(\d+)(\.exr)$/i);
+        const mb = b.match(/(\d+)(\.exr)$/i);
+        const na = ma ? parseInt(ma[1],10) : 0;
+        const nb = mb ? parseInt(mb[1],10) : 0;
+        return na - nb;
+      });
+      return files.length ? files : [path];
+    } catch (_) { return [path]; }
+  }
+
+  function updateTimelineUI() {
+    const tl = getEl('timeline');
+    const counter = getEl('frame-counter');
+    if (tl) {
+      tl.max = Math.max(0, framePaths.length - 1);
+      tl.value = currentFrame;
+      tl.disabled = framePaths.length <= 1;
+    }
+    if (counter) counter.textContent = `${framePaths.length ? currentFrame + 1 : 0}/${framePaths.length}`;
+  }
+
+  async function loadFrame(idx) {
+    if (idx < 0 || idx >= framePaths.length) return;
+    currentFrame = idx;
+    const path = framePaths[idx];
+    const pathEl = getEl('path');
+    const cv = getEl('cv');
+    const info = getEl('info');
+    if (!pathEl || !cv || !info) return;
+    pathEl.value = path;
+    const ctx = cv.getContext('2d');
+    const lutPath = null;
+    try {
+      if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
+      const [w, h, b64] = await invoke('open_exr', {
+        path,
+        maxSize: MAX_PREVIEW,
+        exposure: 0,
+        gamma: 1.0,
+        lutPath: lutPath,
+        highQuality: true
+      });
+      const img = new Image();
+      img.onload = () => {
+        imgW = w; imgH = h;
+        cv.width = w; cv.height = h;
+        ctx.clearRect(0,0,w,h);
+        ctx.drawImage(img,0,0);
+        info.textContent = `preview: ${w}x${h}`;
+        appendLog(`open ok: ${w}x${h}`);
+      };
+      img.src = 'data:image/png;base64,' + b64;
+      await loadMetadata(path);
+      await refreshScopes();
+      updateTimelineUI();
+    } catch (e) {
+      if (String(e).includes('cancelled')) {
+        appendLog('読み込みキャンセル');
+      } else {
+        appendLog('読み込み失敗: ' + e);
+        alert('読み込み失敗: ' + e);
+      }
+    }
+  }
+
+  function play() {
+    if (playTimer || framePaths.length <= 1) return;
+    playTimer = setInterval(() => {
+      if (currentFrame < framePaths.length - 1) {
+        loadFrame(currentFrame + 1);
+      } else {
+        pause();
+      }
+    }, 1000 / PLAY_FPS);
+    const btn = getEl('btn-play');
+    if (btn) btn.textContent = '⏸';
+  }
+
+  function pause() {
+    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    const btn = getEl('btn-play');
+    if (btn) btn.textContent = '▶';
   }
 
   function drawHistogram(s) {
@@ -146,48 +249,15 @@
   }
 
   async function openExr() {
+    pause();
     const pathEl = getEl('path');
-    // OCIO要素の参照は必要時のみ取得（openExr内では未使用）
-    const cv = getEl('cv');
-    const info = getEl('info');
-    if (!pathEl || !cv || !info) return;
-    const ctx = cv.getContext('2d');
-
+    if (!pathEl) return;
     const path = pathEl.value.trim();
-    const lutPath = null; // 外部LUT読込は廃止
-    try {
-      if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
-      const [w, h, b64] = await invoke('open_exr', {
-        path,
-        // 最大プレビュー解像度（既定）
-        maxSize: MAX_PREVIEW,
-        exposure: 0,
-        gamma: 1.0,
-        lutPath: lutPath,
-        highQuality: true
-      });
-      const img = new Image();
-      img.onload = () => {
-        imgW = w; imgH = h;
-        cv.width = w; cv.height = h;
-        ctx.clearRect(0,0,w,h);
-        ctx.drawImage(img, 0, 0);
-        info.textContent = `preview: ${w}x${h}`;
-        appendLog(`open ok: ${w}x${h}`);
-      };
-      img.src = 'data:image/png;base64,' + b64;
-      await loadMetadata(path);
-      await refreshScopes();
-    } catch (e) {
-      if (String(e).includes('cancelled')) {
-        appendLog('読み込みキャンセル');
-      } else {
-        appendLog('読み込み失敗: ' + e);
-        alert('読み込み失敗: ' + e);
-      }
-    } finally {
-      // progress UI は未配線のため no-op
-    }
+    framePaths = await detectSequence(path);
+    const idx = framePaths.indexOf(path);
+    currentFrame = idx >= 0 ? idx : 0;
+    updateTimelineUI();
+    await loadFrame(currentFrame);
   }
 
   async function loadMetadata(path) {
@@ -251,6 +321,12 @@
     const clearLutBtn = null;
     const useStateLut = null;
     const addAttrBtn = getEl('add-attr');
+    const timelineEl = getEl('timeline');
+    const btnFirst = getEl('btn-first');
+    const btnPrev = getEl('btn-prev');
+    const btnPlay = getEl('btn-play');
+    const btnNext = getEl('btn-next');
+    const btnLast = getEl('btn-last');
     const progIntervalEl = getEl('progress-interval');
     const progThreshEl = getEl('progress-threshold');
     const defaultTransformEl = getEl('default-transform');
@@ -258,6 +334,13 @@
     attrTable = getEl('attr-table');
     const scopeChannelEl = getEl('scope-channel');
     const scopeScaleEl = getEl('scope-scale');
+    updateTimelineUI();
+    if (timelineEl) timelineEl.addEventListener('input', () => { pause(); loadFrame(parseInt(timelineEl.value, 10)); });
+    if (btnFirst) btnFirst.addEventListener('click', () => { pause(); loadFrame(0); });
+    if (btnPrev) btnPrev.addEventListener('click', () => { pause(); loadFrame(Math.max(0, currentFrame - 1)); });
+    if (btnNext) btnNext.addEventListener('click', () => { pause(); loadFrame(Math.min(framePaths.length - 1, currentFrame + 1)); });
+    if (btnLast) btnLast.addEventListener('click', () => { pause(); loadFrame(framePaths.length - 1); });
+    if (btnPlay) btnPlay.addEventListener('click', () => { if (playTimer) pause(); else play(); });
 
     useStateLutEnabled = true;
     scopeChannelEl?.addEventListener('change', () => {
