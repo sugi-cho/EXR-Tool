@@ -26,3 +26,9 @@ canvas { border: 1px solid #ccc; max-width: 100%; }
 #context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; }
 #context-menu div { padding: 4px 8px; cursor: pointer; }
 #context-menu div:hover { background: #def; }
+
+/* Export PNG queue (PR #53 cleanup) */
+#export-queue { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.export-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.export-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.export-item.cancelled { opacity: 0.6; }

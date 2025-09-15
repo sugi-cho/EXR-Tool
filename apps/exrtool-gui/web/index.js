@@ -59,6 +59,83 @@
     el.textContent = msg;
   }
 
+  // --- PNG 書き出しキュー（バッチ） ---
+  const exportQueue = [];
+  let exportRunning = false;
+  let exportIdCounter = 0;
+
+  function getQueueContainer() {
+    let cont = document.getElementById('export-queue');
+    if (!cont) {
+      cont = document.createElement('div');
+      cont.id = 'export-queue';
+      const host = document.getElementById('side-tab-export') || document.body;
+      host.appendChild(cont);
+    }
+    return cont;
+  }
+
+  function queueExportFiles(paths) {
+    const cont = getQueueContainer();
+    for (const p of paths) {
+      const id = `exp-${exportIdCounter++}`;
+      const div = document.createElement('div');
+      div.className = 'export-item';
+      div.innerHTML = `<span class="name"></span> <progress max="100" value="0"></progress> <button class="cancel">Cancel</button>`;
+      div.querySelector('.name').textContent = p;
+      const prog = div.querySelector('progress');
+      const cancelBtn = div.querySelector('button.cancel');
+      const item = { id, path: p, prog, cancelBtn, status: 'pending', cancelled: false };
+      cancelBtn.addEventListener('click', async () => {
+        item.cancelled = true;
+        if (item.status === 'processing') { try { await invoke('cancel_open'); } catch {} }
+        if (prog) prog.value = 0;
+        item.status = 'cancelled';
+        div.classList.add('cancelled');
+        processExportQueue();
+      });
+      cont.appendChild(div);
+      exportQueue.push(item);
+    }
+    processExportQueue();
+  }
+
+  async function processExportQueue() {
+    if (exportRunning) return;
+    const item = exportQueue.find(i => i.status === 'pending' && !i.cancelled);
+    if (!item) return;
+    exportRunning = true;
+    item.status = 'processing';
+    try {
+      if (!(await ensureTauriReady())) throw new Error('Tauri API unavailable');
+      const t = window.__TAURI__;
+      let unlisten = null;
+      if (t && t.event && t.event.listen && item.prog) {
+        unlisten = await t.event.listen('open-progress', e => { try { item.prog.value = e.payload; } catch {} });
+      }
+      await invoke('open_exr', { path: item.path, maxSize: MAX_PREVIEW, exposure: 0, gamma: 1.0, lutPath: null, highQuality: true });
+      if (!item.cancelled) {
+        const out = item.path.replace(/\.exr$/i, '.png');
+        await invoke('export_preview_png', { outPath: out });
+        if (item.prog) item.prog.value = 100;
+        appendLog('PNG保存: ' + out);
+        item.status = 'done';
+      }
+      if (unlisten) unlisten();
+    } catch (e) {
+      if (String(e).includes('cancelled') || item.cancelled) {
+        item.status = 'cancelled';
+        appendLog('PNG書き出しキャンセル: ' + item.path);
+      } else {
+        item.status = 'error';
+        appendLog('PNG書き出し失敗: ' + item.path + ' : ' + e);
+      }
+    } finally {
+      exportRunning = false;
+      processExportQueue();
+    }
+  }
+
   async function ensureTauriReady(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -543,19 +620,15 @@
       try {
         if (!(await ensureTauriReady())) return;
         const t = window.__TAURI__;
-        const dialogOpen = t && (t.dialog && t.dialog.open) ? t.dialog.open : (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open ? t.tauri.dialog.open : null);
-        if (dialogOpen) {
-          const selected = await dialogOpen({ multiple: true, filters: [{ name: 'EXR', extensions: ['exr'] }] });
-          if (selected && (Array.isArray(selected) ? selected.length > 0 : true)) {
-            const paths = Array.isArray(selected) ? selected : [selected];
-            queueExportFiles(paths);
-            return;
-          }
+        const saveDlg = (t && t.dialog && t.dialog.save) || (t && t.tauri && t.tauri.dialog && t.tauri.dialog.save) || null;
+        let out = null;
+        if (saveDlg) {
+          out = await saveDlg({ filters: [{ name: 'PNG', extensions: ['png'] }], defaultPath: 'preview.png' });
+          if (!out) return;
+        } else {
+          out = prompt('保存するPNGパスを入力:', 'preview.png');
+          if (!out) return;
         }
-      } catch (e) { appendLog('ファイル選択失敗: ' + e); }
-      const out = prompt('保存するPNGパスを入力:', 'preview.png');
-      if (!out) return;
-      try {
         await invoke('export_preview_png', { outPath: out });
         appendLog('PNG保存: ' + out);
         alert('保存しました: ' + out);
@@ -773,6 +846,7 @@
     const proresOutEl = getEl('prores-out');
     const browseProresOutBtn = getEl('browse-prores-out');
     const proresProg = getEl('prores-progress');
+    const exportPngBatchBtn = document.getElementById('export-png-batch');
 
     // Folder browse (EXR sequence)
     if (browseSeqBtn) browseSeqBtn.addEventListener('click', async () => {
@@ -808,6 +882,21 @@
           await logBoth(`出力入力: ${proresOutEl?.value || ''}`);
         }
       } catch (e) { appendLog('出力選択失敗: ' + e); }
+    });
+
+    // Export PNG (Batch)
+    if (exportPngBatchBtn) exportPngBatchBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const t = window.__TAURI__;
+        const dialogOpen = (t && t.dialog && t.dialog.open) || (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open) || null;
+        if (!dialogOpen) return;
+        const selected = await dialogOpen({ multiple: true, filters: [{ name: 'EXR', extensions: ['exr'] }] });
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected];
+          queueExportFiles(paths);
+        }
+      } catch (e) { appendLog('PNGバッチ追加失敗: ' + e); }
     });
 
     // Export ProRes
