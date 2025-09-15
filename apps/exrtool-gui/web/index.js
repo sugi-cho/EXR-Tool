@@ -11,6 +11,13 @@
   let waveform = null;
   let scopeChannel = 'rgb';
   let scopeScale = 1;
+  let previewChannel = 'rgb';
+  let compareEnabled = false;
+  let comparePos = 0.5;
+  let previewA = null;
+  let previewB = null;
+  let cv = null;
+  let btnRgb = null, btnAlpha = null, compareToggle = null, compareSlider = null;
 
   // 簡易デバウンス
   function debounce(fn, ms) {
@@ -145,13 +152,71 @@
     } catch (e) { console.error('refreshScopes failed', e); }
   }
 
+  function createPreviewCanvases(img) {
+    const rgb = document.createElement('canvas');
+    rgb.width = img.width; rgb.height = img.height;
+    rgb.getContext('2d').drawImage(img, 0, 0);
+    const a = document.createElement('canvas');
+    a.width = img.width; a.height = img.height;
+    const actx = a.getContext('2d');
+    actx.drawImage(img, 0, 0);
+    const data = actx.getImageData(0, 0, img.width, img.height);
+    for (let i = 0; i < data.data.length; i += 4) {
+      const al = data.data[i + 3];
+      data.data[i] = data.data[i + 1] = data.data[i + 2] = al;
+      data.data[i + 3] = 255;
+    }
+    actx.putImageData(data, 0, 0);
+    return { rgb, a, width: img.width, height: img.height };
+  }
+
+  function renderPreview() {
+    if (!cv || !previewB) return;
+    const ctx = cv.getContext('2d');
+    const w = previewB.width;
+    const h = previewB.height;
+    cv.width = w; cv.height = h;
+    ctx.clearRect(0, 0, w, h);
+    if (compareEnabled && previewA) {
+      const split = Math.floor(w * comparePos);
+      ctx.drawImage(previewA[previewChannel], 0, 0, split, h, 0, 0, split, h);
+      ctx.drawImage(previewB[previewChannel], split, 0, w - split, h, split, 0, w - split, h);
+      ctx.strokeStyle = 'yellow';
+      ctx.beginPath();
+      ctx.moveTo(split + 0.5, 0);
+      ctx.lineTo(split + 0.5, h);
+      ctx.stroke();
+    } else {
+      ctx.drawImage(previewB[previewChannel], 0, 0);
+    }
+  }
+
+  function setNewPreview(img) {
+    if (previewB) previewA = previewB;
+    previewB = createPreviewCanvases(img);
+    renderPreview();
+  }
+
+  function setChannel(ch) {
+    previewChannel = ch;
+    if (btnRgb) btnRgb.classList.toggle('active', ch === 'rgb');
+    if (btnAlpha) btnAlpha.classList.toggle('active', ch === 'a');
+    appendLog('channel: ' + ch);
+    renderPreview();
+  }
+
+  function toggleCompare(enable) {
+    compareEnabled = enable;
+    if (compareSlider) compareSlider.style.display = enable ? 'block' : 'none';
+    appendLog('compare: ' + enable);
+    renderPreview();
+  }
+
   async function openExr() {
     const pathEl = getEl('path');
     // OCIO要素の参照は必要時のみ取得（openExr内では未使用）
-    const cv = getEl('cv');
     const info = getEl('info');
     if (!pathEl || !cv || !info) return;
-    const ctx = cv.getContext('2d');
 
     const path = pathEl.value.trim();
     const lutPath = null; // 外部LUT読込は廃止
@@ -169,9 +234,7 @@
       const img = new Image();
       img.onload = () => {
         imgW = w; imgH = h;
-        cv.width = w; cv.height = h;
-        ctx.clearRect(0,0,w,h);
-        ctx.drawImage(img, 0, 0);
+        setNewPreview(img);
         info.textContent = `preview: ${w}x${h}`;
         appendLog(`open ok: ${w}x${h}`);
       };
@@ -249,7 +312,7 @@
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
     const saveBtn = getEl('save');
-    const cv = getEl('cv');
+    cv = getEl('cv');
     const pathEl = getEl('path');
     // HQ/LUT UIは廃止（既定ON）
     const hqEl = null;
@@ -265,6 +328,10 @@
     attrTable = getEl('attr-table');
     const scopeChannelEl = getEl('scope-channel');
     const scopeScaleEl = getEl('scope-scale');
+    btnRgb = getEl('btn-channel-rgb');
+    btnAlpha = getEl('btn-channel-a');
+    compareToggle = getEl('toggle-compare');
+    compareSlider = getEl('compare-slider');
 
     useStateLutEnabled = true;
     scopeChannelEl?.addEventListener('change', () => {
@@ -276,6 +343,14 @@
       scopeScale = parseInt(scopeScaleEl.value)||1;
       drawHistogram(stats);
       drawWaveform(waveform);
+    });
+
+    if (btnRgb) btnRgb.addEventListener('click', () => setChannel('rgb'));
+    if (btnAlpha) btnAlpha.addEventListener('click', () => setChannel('a'));
+    if (compareToggle) compareToggle.addEventListener('change', () => toggleCompare(compareToggle.checked));
+    if (compareSlider) compareSlider.addEventListener('input', () => {
+      comparePos = (parseInt(compareSlider.value, 10) || 0) / 100;
+      renderPreview();
     });
 
     if (openBtn) openBtn.addEventListener('click', openExr);
@@ -431,6 +506,31 @@
       });
     }
 
+    document.addEventListener('keydown', (ev) => {
+      const tag = ev.target && ev.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (ev.key === 'j' || ev.key === 'J') {
+        setChannel('rgb');
+      } else if (ev.key === 'k' || ev.key === 'K') {
+        setChannel('a');
+      } else if (ev.key === 'l' || ev.key === 'L') {
+        toggleCompare(!compareEnabled);
+        if (compareToggle) compareToggle.checked = compareEnabled;
+      } else if (ev.key === 'ArrowLeft') {
+        if (compareEnabled) {
+          comparePos = Math.max(0, comparePos - 0.05);
+          if (compareSlider) compareSlider.value = (comparePos * 100).toFixed(0);
+          renderPreview();
+        }
+      } else if (ev.key === 'ArrowRight') {
+        if (compareEnabled) {
+          comparePos = Math.min(1, comparePos + 0.05);
+          if (compareSlider) compareSlider.value = (comparePos * 100).toFixed(0);
+          renderPreview();
+        }
+      }
+    });
+
     if (saveBtn) saveBtn.addEventListener('click', async () => {
       const out = prompt('保存するPNGパスを入力:', 'preview.png');
       if (!out) return;
@@ -491,10 +591,8 @@
         const img = new Image();
         const info = getEl('info');
         img.onload = () => {
-          const ctx = cv.getContext('2d');
-          cv.width = w; cv.height = h;
-          ctx.clearRect(0, 0, w, h);
-          ctx.drawImage(img, 0, 0);
+          imgW = w; imgH = h;
+          setNewPreview(img);
           if (info) info.textContent = `preview: ${w}x${h}`;
         };
         img.src = 'data:image/png;base64,' + b64;

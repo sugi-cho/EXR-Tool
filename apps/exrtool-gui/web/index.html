@@ -45,6 +45,12 @@
     </header>
     <main>
       <canvas id="cv"></canvas>
+      <div class="preview-controls">
+        <button id="btn-channel-rgb" class="active">RGB</button>
+        <button id="btn-channel-a">A</button>
+        <label><input type="checkbox" id="toggle-compare" /> A/B</label>
+        <input type="range" id="compare-slider" min="0" max="100" value="50" style="display:none;" />
+      </div>
       <div>
         <canvas id="hist" width="256" height="100"></canvas>
         <canvas id="waveform" width="256" height="100"></canvas>
