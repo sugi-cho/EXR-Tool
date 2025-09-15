@@ -7,11 +7,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css" />
     <style>
+      /* dark theme friendly table styles */
       #attr-table { border-collapse: collapse; }
-      #attr-table th, #attr-table td { border: 1px solid #ccc; padding: 2px 4px; }
-      #attr-table tr.added { background: #e0ffe0; }
-      #attr-table tr.modified { background: #fff4c2; }
-      #attr-table tr.deleted { background: #ffd6d6; text-decoration: line-through; }
+      #attr-table th, #attr-table td { border: 1px solid var(--border); padding: 4px 6px; color: var(--text-1); }
+      #attr-table tr.added { background: color-mix(in srgb, #16a34a, transparent 88%); }
+      #attr-table tr.modified { background: color-mix(in srgb, var(--accent), white 88%); }
+      #attr-table tr.deleted { background: color-mix(in srgb, #ef4444, transparent 85%); text-decoration: line-through; }
     </style>
   </head>
   <body>
