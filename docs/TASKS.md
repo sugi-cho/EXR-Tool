@@ -30,7 +30,7 @@
   - [ ] タブ統合: `Preview` と `Video` を統合し、単一のプレビュービューで連番EXRの再生・確認を行う
   - [ ] 連番プレビュー: タイムライン／再生・一時停止／フレーム番号表示（単一EXRも同UIで表示）
   - [ ] エクスポート: 右パネル下部に「Export as Video」を配置（ProRes書き出し／FPS指定はここで実施）
-  - [ ] メタデータ: 編集UI（属性テーブルの追加・編集・削除）を撤去し、Infoタブは閲覧専用へ変更
+    - [x] メタデータ: 編集UI（属性テーブルの追加・編集・削除）を撤去し、Infoタブは閲覧専用へ変更
   - [ ] 既存機能の移設: `seq_fps` / `export_prores` のイベント配線を統合後のUIへ移行
   - [ ] ドキュメント更新: `uiUpdate/UIUX_DesignDocumentForExrTool.md` とモック `uiUpdate/ModernUIMockup.html` に方針反映
   - [ ] 受け入れ基準（DoD）:
