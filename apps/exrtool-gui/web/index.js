@@ -225,27 +225,20 @@
     }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    // Tabs
+  function initPreviewDom() {
     const tabBtnPreview = document.getElementById('tab-btn-preview');
-    const tabBtnVideo = document.getElementById('tab-btn-video');
     const tabBtnSettings = document.getElementById('tab-btn-settings');
     const tabPreview = document.getElementById('tab-preview');
-    const tabVideo = document.getElementById('tab-video');
     const tabSettings = document.getElementById('tab-settings');
     function activate(tab){
-      if (!tabPreview || !tabVideo || !tabSettings) return;
+      if (!tabPreview || !tabSettings) return;
       tabPreview.style.display = (tab === 'preview') ? 'block' : 'none';
-      tabVideo.style.display = (tab === 'video') ? 'block' : 'none';
       tabSettings.style.display = (tab === 'settings') ? 'block' : 'none';
       tabBtnPreview?.classList.toggle('active', tab === 'preview');
-      tabBtnVideo?.classList.toggle('active', tab === 'video');
       tabBtnSettings?.classList.toggle('active', tab === 'settings');
     }
     tabBtnPreview?.addEventListener('click', ()=>{ logBoth('tab: preview'); activate('preview'); });
-    tabBtnVideo?.addEventListener('click', ()=>{ logBoth('tab: video'); activate('video'); });
     tabBtnSettings?.addEventListener('click', ()=>{ logBoth('tab: settings'); activate('settings'); });
-    logBoth('boot: video controls present? browse-seq=' + (!!document.getElementById('browse-seq')) + ', browse-prores-out=' + (!!document.getElementById('browse-prores-out')));
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
     const saveBtn = getEl('save');
@@ -743,4 +736,7 @@
         }
       } catch (e) { appendLog('ProRes出力失敗: ' + e); alert('ProRes出力失敗: ' + e); }
     });
+  }
+
+  document.addEventListener('DOMContentLoaded', initPreviewDom);
 })();
