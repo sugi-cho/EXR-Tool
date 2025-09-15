@@ -361,7 +361,9 @@
     const clearLutBtn = null;
     const useStateLut = null;
     const progIntervalEl = getEl('progress-interval');
+    const progIntervalResetBtn = getEl('progress-interval-reset');
     const progThreshEl = getEl('progress-threshold');
+    const progThreshResetBtn = getEl('progress-threshold-reset');
     const defaultTransformEl = getEl('default-transform');
     const logConsentEl = getEl('log-consent');
     attrTable = getEl('attr-table');
@@ -518,6 +520,8 @@
     }, 500);
     progIntervalEl?.addEventListener('input', saveProgress);
     progThreshEl?.addEventListener('input', saveProgress);
+    progIntervalResetBtn?.addEventListener('click', () => { if (progIntervalEl) { progIntervalEl.value = '100'; saveProgress(); } });
+    progThreshResetBtn?.addEventListener('click', () => { if (progThreshEl) { progThreshEl.value = '0.5'; saveProgress(); } });
 
     if (browseBtn) browseBtn.addEventListener('click', async () => {
       try {
@@ -536,10 +540,22 @@
     // 属性テーブルは閲覧専用のため、追加・編集・削除は不可
 
     if (saveBtn) saveBtn.addEventListener('click', async () => {
+      try {
+        if (!(await ensureTauriReady())) return;
+        const t = window.__TAURI__;
+        const dialogOpen = t && (t.dialog && t.dialog.open) ? t.dialog.open : (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open ? t.tauri.dialog.open : null);
+        if (dialogOpen) {
+          const selected = await dialogOpen({ multiple: true, filters: [{ name: 'EXR', extensions: ['exr'] }] });
+          if (selected && (Array.isArray(selected) ? selected.length > 0 : true)) {
+            const paths = Array.isArray(selected) ? selected : [selected];
+            queueExportFiles(paths);
+            return;
+          }
+        }
+      } catch (e) { appendLog('ファイル選択失敗: ' + e); }
       const out = prompt('保存するPNGパスを入力:', 'preview.png');
       if (!out) return;
       try {
-        if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
         await invoke('export_preview_png', { outPath: out });
         appendLog('PNG保存: ' + out);
         alert('保存しました: ' + out);
@@ -746,9 +762,11 @@
     const seqDirEl = getEl('seq-dir');
     const browseSeqBtn = getEl('browse-seq');
     const proresFpsEl = getEl('prores-fps');
+    const proresFpsResetBtn = getEl('prores-fps-reset');
     const proresCsEl = getEl('prores-colorspace');
     const proresProfileEl = getEl('prores-profile');
     const proresMaxEl = getEl('prores-max');
+    const proresMaxResetBtn = getEl('prores-max-reset');
     // Exposure input removed for ProRes
     const proresTfEl = getEl('prores-tf');
     const proresQualityEl = getEl('prores-quality');
@@ -826,3 +844,5 @@
       } catch (e) { appendLog('ProRes出力失敗: ' + e); alert('ProRes出力失敗: ' + e); }
     });
 })();
+    proresFpsResetBtn?.addEventListener('click', () => { if (proresFpsEl) proresFpsEl.value = '24'; });
+    proresMaxResetBtn?.addEventListener('click', () => { if (proresMaxEl) proresMaxEl.value = '2048'; });

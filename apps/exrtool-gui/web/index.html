@@ -101,7 +101,7 @@
           </div>
           <fieldset>
             <legend>Export ProRes</legend>
-            <label>FPS <input id="prores-fps" type="number" min="1" step="0.01" value="24"/></label>
+            <label>FPS <input id="prores-fps" type="number" min="1" step="0.01" value="24"/> <button id="prores-fps-reset">Reset</button></label>
             <label>Colorspace
               <select id="prores-colorspace">
                 <option value="linear:srgb" selected>Linear → sRGB</option>
@@ -116,7 +116,7 @@
                 <option value="4444">ProRes 4444</option>
               </select>
             </label>
-            <label>Max Size <input id="prores-max" type="number" value="2048"/></label>
+            <label>Max Size <input id="prores-max" type="number" value="2048"/> <button id="prores-max-reset">Reset</button></label>
             <!-- Exposure removed by request -->
             <label>TF <select id="prores-tf"><option value="g22" selected>g22</option><option value="g24">g24</option><option value="linear">linear</option></select></label>
             <label>Quality
@@ -149,11 +149,67 @@
     </main>
     </section>
 
+<<<<<<< HEAD
+    <section id="tab-video" style="display:none; padding:8px 12px;">
+      <h2>Video Tools</h2>
+      <div class="toolbar">
+        <label>Sequence Folder: <input id="seq-dir" size="50" placeholder="Select EXR sequence folder"/></label>
+        <button id="browse-seq">Browse…</button>
+      </div>
+      <fieldset>
+        <legend>Set FPS (write metadata)</legend>
+        <label>FPS <input id="seq-fps" type="number" min="1" step="0.01" value="24"/><button id="seq-fps-reset">Reset</button></label>
+        <label>Attribute <input id="seq-fps-attr" type="text" value="FramesPerSecond"/></label>
+        <label><input id="seq-fps-recursive" type="checkbox"/> Recursive</label>
+        <label><input id="seq-fps-dryrun" type="checkbox"/> Dry Run</label>
+        <button id="apply-fps">Apply FPS</button>
+        <button id="cancel-fps" style="display:none;">Cancel</button>
+        <progress id="seq-progress" max="100" value="0" style="width: 100%; display:none;"></progress>
+        <small>Note: requires GUI build with feature exr_pure.</small>
+      </fieldset>
+      <fieldset>
+        <legend>Export ProRes</legend>
+        <label>FPS <input id="prores-fps" type="number" min="1" step="0.01" value="24"/><button id="prores-fps-reset">Reset</button></label>
+        <label>Colorspace
+          <select id="prores-colorspace">
+            <option value="linear:srgb" selected>Linear → sRGB</option>
+            <option value="acescg:srgb">ACEScg → sRGB</option>
+            <option value="aces2065:srgb">ACES2065-1 → sRGB</option>
+          </select>
+        </label>
+        <label>Profile
+          <select id="prores-profile">
+            <option value="422hq" selected>ProRes 422 HQ</option>
+            <option value="422">ProRes 422</option>
+            <option value="4444">ProRes 4444</option>
+          </select>
+        </label>
+        <label>Max Size <input id="prores-max" type="number" value="2048"/><button id="prores-max-reset">Reset</button></label>
+        <!-- Exposure removed by request -->
+        <label>TF <select id="prores-tf"><option value="g22" selected>g22</option><option value="g24">g24</option><option value="linear">linear</option></select></label>
+        <label>Quality
+          <select id="prores-quality">
+            <option value="High" selected>High</option>
+            <option value="Fast">Fast</option>
+          </select>
+        </label>
+        <div style="margin-top:6px;">
+          <label>Output MOV: <input id="prores-out" size="40" placeholder="C:\\path\\to\\out.mov"/></label>
+          <button id="browse-prores-out">Browse…</button>
+          <button id="export-prores">Export ProRes</button>
+        </div>
+        <progress id="prores-progress" max="100" value="0" style="width: 100%; display:none;"></progress>
+      </fieldset>
+    </section>
+
     <section id="tab-settings" style="display:none; padding:8px 12px;">
+=======
+    <section id="tab-settings" style="display:none; padding:8px 12px;">
+>>>>>>> origin/master
       <h2>Settings</h2>
       <div class="toolbar">
-        <label>Progress Interval (ms) <input id="progress-interval" type="number" min="0" value="100"/></label>
-        <label>Progress Threshold (%) <input id="progress-threshold" type="number" min="0" step="0.1" value="0.5"/></label>
+        <label>Progress Interval (ms) <input id="progress-interval" type="number" min="0" value="100"/> <button id="progress-interval-reset">Reset</button></label>
+        <label>Progress Threshold (%) <input id="progress-threshold" type="number" min="0" step="0.1" value="0.5"/> <button id="progress-threshold-reset">Reset</button></label>
         <label>Default Transform <select id="default-transform"></select></label>
         <label><input id="log-consent" type="checkbox" /> 解析情報送信を許可</label>
       </div>
