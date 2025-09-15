@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ExrTool Preview</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css" />
     <style>
       #attr-table { border-collapse: collapse; }
@@ -45,11 +46,19 @@
     </header>
     <main>
       <aside id="left-panel">
+        <div class="panel-header">
+          <h2>Project Files</h2>
+          <p>EXR sequences & files</p>
+        </div>
         <button id="import-media">Import Media</button>
         <ul id="file-list"></ul>
       </aside>
       <canvas id="cv"></canvas>
       <div id="right-panel">
+        <div class="panel-header">
+          <h2 id="asset-name">-</h2>
+          <p id="asset-meta" class="sub">-</p>
+        </div>
         <nav class="tabs">
           <button id="side-tab-btn-color" class="active">Color</button>
           <button id="side-tab-btn-info">Info</button>
