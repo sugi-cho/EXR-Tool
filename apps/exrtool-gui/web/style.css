@@ -1,7 +1,7 @@
 html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
 header { padding: 8px; background: #20232a; color: #fff; }
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-main { display: grid; grid-template-columns: 1fr 300px; gap: 8px; padding: 8px; }
+main { display: grid; grid-template-columns: 1fr 300px 300px; gap: 8px; padding: 8px; }
 canvas { border: 1px solid #ccc; max-width: 100%; }
 .readout { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .info { margin-top: 6px; font-size: 12px; opacity: 0.8; }
