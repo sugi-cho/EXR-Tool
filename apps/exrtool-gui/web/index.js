@@ -12,6 +12,9 @@
   let scopeChannel = 'rgb';
   let scopeScale = 1;
 
+  const exportQueue = [];
+  let exporting = false;
+
   // 簡易デバウンス
   function debounce(fn, ms) {
     let t = null;
@@ -145,6 +148,66 @@
     } catch (e) { console.error('refreshScopes failed', e); }
   }
 
+  function enqueueExport(path) {
+    let container = getEl('export-queue');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'export-queue';
+      document.body.appendChild(container);
+    }
+    const id = Date.now() + Math.random();
+    const el = document.createElement('div');
+    el.className = 'export-item';
+    el.innerHTML = `<span class="name"></span> <progress max="100" value="0"></progress> <button class="cancel">Cancel</button>`;
+    el.querySelector('.name').textContent = path;
+    container.appendChild(el);
+    const task = {
+      id,
+      path,
+      out: path.replace(/\.exr$/i, '.png'),
+      el,
+      prog: el.querySelector('progress'),
+      cancel: false,
+    };
+    const cancelBtn = el.querySelector('.cancel');
+    cancelBtn.addEventListener('click', async () => {
+      task.cancel = true;
+      cancelBtn.disabled = true;
+      try { if (invoke || await ensureTauriReady()) { await invoke('cancel_open'); } } catch (_) {}
+    });
+    exportQueue.push(task);
+  }
+
+  async function processExportQueue() {
+    if (exporting) return;
+    exporting = true;
+    while (exportQueue.length > 0) {
+      const task = exportQueue.shift();
+      if (task.cancel) { task.el.remove(); continue; }
+      try {
+        task.prog.value = 0;
+        if (!(await ensureTauriReady())) throw new Error('Tauri API が利用できません');
+        let unlisten = null;
+        const t = window.__TAURI__;
+        if (t && t.event && t.event.listen) {
+          try {
+            unlisten = await t.event.listen('export-progress', (e) => {
+              try { if (task.prog) task.prog.value = e.payload; } catch(_){}
+            });
+          } catch(_){}
+        }
+        await invoke('open_exr', { path: task.path, maxSize: MAX_PREVIEW, exposure: 0, gamma: 1.0, lutPath: null, highQuality: true });
+        if (task.cancel) { if (unlisten) unlisten(); task.el.remove(); continue; }
+        await invoke('export_preview_png', { outPath: task.out });
+        if (unlisten) unlisten();
+        task.prog.value = 100;
+      } catch (e) {
+        appendLog('export失敗: ' + e);
+      }
+    }
+    exporting = false;
+  }
+
   async function openExr() {
     const pathEl = getEl('path');
     // OCIO要素の参照は必要時のみ取得（openExr内では未使用）
@@ -260,6 +323,8 @@
     const addAttrBtn = getEl('add-attr');
     const progIntervalEl = getEl('progress-interval');
     const progThreshEl = getEl('progress-threshold');
+    const resetProgIntervalBtn = getEl('reset-progress-interval');
+    const resetProgThreshBtn = getEl('reset-progress-threshold');
     const defaultTransformEl = getEl('default-transform');
     const logConsentEl = getEl('log-consent');
     attrTable = getEl('attr-table');
@@ -386,14 +451,35 @@
     }, 500);
     progIntervalEl?.addEventListener('input', saveProgress);
     progThreshEl?.addEventListener('input', saveProgress);
+    resetProgIntervalBtn?.addEventListener('click', () => {
+      if (progIntervalEl) {
+        progIntervalEl.value = progIntervalEl.getAttribute('value') || '100';
+        progIntervalEl.dispatchEvent(new Event('input'));
+      }
+    });
+    resetProgThreshBtn?.addEventListener('click', () => {
+      if (progThreshEl) {
+        progThreshEl.value = progThreshEl.getAttribute('value') || '0.5';
+        progThreshEl.dispatchEvent(new Event('input'));
+      }
+    });
 
     if (browseBtn) browseBtn.addEventListener('click', async () => {
       try {
         const t = window.__TAURI__;
         const dialogOpen = t && (t.dialog && t.dialog.open) ? t.dialog.open : (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open ? t.tauri.dialog.open : null);
         if (dialogOpen) {
-          const selected = await dialogOpen({ multiple: false, filters: [{ name: 'EXR', extensions: ['exr'] }] });
-          if (selected) { pathEl.value = selected; await openExr(); }
+          const selected = await dialogOpen({ multiple: true, filters: [{ name: 'EXR', extensions: ['exr'] }] });
+          if (Array.isArray(selected)) {
+            if (selected.length > 0) {
+              pathEl.value = selected[0];
+              await openExr();
+              selected.forEach(p => enqueueExport(p));
+            }
+          } else if (selected) {
+            pathEl.value = selected;
+            await openExr();
+          }
         } else {
           const p = prompt('EXRファイルのパスを入力');
           if (p) { pathEl.value = p; await openExr(); }
@@ -432,6 +518,10 @@
     }
 
     if (saveBtn) saveBtn.addEventListener('click', async () => {
+      if (exportQueue.length > 0) {
+        await processExportQueue();
+        return;
+      }
       const out = prompt('保存するPNGパスを入力:', 'preview.png');
       if (!out) return;
       try {
@@ -615,6 +705,7 @@
     const seqDirEl = getEl('seq-dir');
     const browseSeqBtn = getEl('browse-seq');
     const seqFpsEl = getEl('seq-fps');
+    const resetSeqFpsBtn = getEl('reset-seq-fps');
     const seqAttrEl = getEl('seq-fps-attr');
     const seqRecursiveEl = getEl('seq-fps-recursive');
     const seqDryRunEl = getEl('seq-fps-dryrun');
@@ -623,15 +714,27 @@
     const seqProg = getEl('seq-progress');
 
     const proresFpsEl = getEl('prores-fps');
+    const resetProresFpsBtn = getEl('reset-prores-fps');
     const proresCsEl = getEl('prores-colorspace');
     const proresProfileEl = getEl('prores-profile');
     const proresMaxEl = getEl('prores-max');
+    const resetProresMaxBtn = getEl('reset-prores-max');
     // Exposure input removed for ProRes
     const proresTfEl = getEl('prores-tf');
     const proresQualityEl = getEl('prores-quality');
     const proresOutEl = getEl('prores-out');
     const browseProresOutBtn = getEl('browse-prores-out');
     const proresProg = getEl('prores-progress');
+
+    resetSeqFpsBtn?.addEventListener('click', () => {
+      if (seqFpsEl) seqFpsEl.value = seqFpsEl.getAttribute('value') || '24';
+    });
+    resetProresFpsBtn?.addEventListener('click', () => {
+      if (proresFpsEl) proresFpsEl.value = proresFpsEl.getAttribute('value') || '24';
+    });
+    resetProresMaxBtn?.addEventListener('click', () => {
+      if (proresMaxEl) proresMaxEl.value = proresMaxEl.getAttribute('value') || '2048';
+    });
 
     // Folder browse (EXR sequence)
     if (browseSeqBtn) browseSeqBtn.addEventListener('click', async () => {
