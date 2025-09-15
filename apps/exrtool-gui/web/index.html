@@ -45,7 +45,7 @@
     </header>
     <main>
       <canvas id="cv"></canvas>
-      <div>
+      <div id="side-panel" style="grid-row: 1 / span 2;">
         <canvas id="hist" width="256" height="100"></canvas>
         <canvas id="waveform" width="256" height="100"></canvas>
         <div class="scope-controls">
@@ -74,6 +74,17 @@
             <thead><tr><th>Name</th><th>Value</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
+        </div>
+      </div>
+      <div id="timeline-panel">
+        <input id="timeline" type="range" min="0" max="0" value="0" />
+        <div class="timeline-buttons">
+          <button id="btn-first">⏮</button>
+          <button id="btn-prev">◀</button>
+          <button id="btn-play">▶</button>
+          <button id="btn-next">▶</button>
+          <button id="btn-last">⏭</button>
+          <span id="frame-counter">0/0</span>
         </div>
       </div>
     </main>
