@@ -44,15 +44,6 @@
     try { if (invoke || await ensureTauriReady()) { await invoke('write_log', { s: msg }); } } catch (_) {}
   }
 
-  async function showSeqSummary(success, failure, dryRun) {
-    const total = success + failure;
-    const msg = dryRun
-      ? `対象ファイル: ${total}`
-      : `連番処理完了: 成功 ${success} 件 / 失敗 ${failure} 件 (全${total}件)`;
-    await logBoth(`seq_fps result: success=${success} failure=${failure} total=${total}${dryRun ? ' (dry-run)' : ''}`);
-    alert(msg);
-  }
-
   function showError(msg) {
     let el = document.getElementById('errordiv');
     if (!el) {
@@ -228,24 +219,18 @@
   document.addEventListener('DOMContentLoaded', () => {
     // Tabs
     const tabBtnPreview = document.getElementById('tab-btn-preview');
-    const tabBtnVideo = document.getElementById('tab-btn-video');
     const tabBtnSettings = document.getElementById('tab-btn-settings');
     const tabPreview = document.getElementById('tab-preview');
-    const tabVideo = document.getElementById('tab-video');
     const tabSettings = document.getElementById('tab-settings');
     function activate(tab){
-      if (!tabPreview || !tabVideo || !tabSettings) return;
+      if (!tabPreview || !tabSettings) return;
       tabPreview.style.display = (tab === 'preview') ? 'block' : 'none';
-      tabVideo.style.display = (tab === 'video') ? 'block' : 'none';
       tabSettings.style.display = (tab === 'settings') ? 'block' : 'none';
       tabBtnPreview?.classList.toggle('active', tab === 'preview');
-      tabBtnVideo?.classList.toggle('active', tab === 'video');
       tabBtnSettings?.classList.toggle('active', tab === 'settings');
     }
     tabBtnPreview?.addEventListener('click', ()=>{ logBoth('tab: preview'); activate('preview'); });
-    tabBtnVideo?.addEventListener('click', ()=>{ logBoth('tab: video'); activate('video'); });
     tabBtnSettings?.addEventListener('click', ()=>{ logBoth('tab: settings'); activate('settings'); });
-    logBoth('boot: video controls present? browse-seq=' + (!!document.getElementById('browse-seq')) + ', browse-prores-out=' + (!!document.getElementById('browse-prores-out')));
     const openBtn = getEl('open');
     const browseBtn = getEl('browse');
     const saveBtn = getEl('save');
@@ -611,17 +596,34 @@
       } catch (e) { appendLog('ログ消去失敗: ' + e); }
     });
   });
-    // --- Video tab controls ---
+    // --- Side panel tabs ---
+    const sideBtnColor = getEl('side-tab-btn-color');
+    const sideBtnInfo = getEl('side-tab-btn-info');
+    const sideBtnTransform = getEl('side-tab-btn-transform');
+    const sideBtnExport = getEl('side-tab-btn-export');
+    const sideColor = getEl('side-tab-color');
+    const sideInfo = getEl('side-tab-info');
+    const sideTransform = getEl('side-tab-transform');
+    const sideExport = getEl('side-tab-export');
+    function activateSide(tab){
+      if (!sideColor || !sideInfo || !sideTransform || !sideExport) return;
+      sideColor.style.display = (tab === 'color') ? 'block' : 'none';
+      sideInfo.style.display = (tab === 'info') ? 'block' : 'none';
+      sideTransform.style.display = (tab === 'transform') ? 'block' : 'none';
+      sideExport.style.display = (tab === 'export') ? 'block' : 'none';
+      sideBtnColor?.classList.toggle('active', tab === 'color');
+      sideBtnInfo?.classList.toggle('active', tab === 'info');
+      sideBtnTransform?.classList.toggle('active', tab === 'transform');
+      sideBtnExport?.classList.toggle('active', tab === 'export');
+    }
+    sideBtnColor?.addEventListener('click', () => { logBoth('side-tab: color'); activateSide('color'); });
+    sideBtnInfo?.addEventListener('click', () => { logBoth('side-tab: info'); activateSide('info'); });
+    sideBtnTransform?.addEventListener('click', () => { logBoth('side-tab: transform'); activateSide('transform'); });
+    sideBtnExport?.addEventListener('click', () => { logBoth('side-tab: export'); activateSide('export'); });
+
+    // --- Export controls ---
     const seqDirEl = getEl('seq-dir');
     const browseSeqBtn = getEl('browse-seq');
-    const seqFpsEl = getEl('seq-fps');
-    const seqAttrEl = getEl('seq-fps-attr');
-    const seqRecursiveEl = getEl('seq-fps-recursive');
-    const seqDryRunEl = getEl('seq-fps-dryrun');
-    const applyFpsBtn = getEl('apply-fps');
-    const cancelFpsBtn = getEl('cancel-fps');
-    const seqProg = getEl('seq-progress');
-
     const proresFpsEl = getEl('prores-fps');
     const proresCsEl = getEl('prores-colorspace');
     const proresProfileEl = getEl('prores-profile');
@@ -649,47 +651,6 @@
           await logBoth(`フォルダ入力: ${seqDirEl?.value || ''}`);
         }
       } catch (e) { appendLog('フォルダダイアログ失敗: ' + e); }
-    });
-
-    // Apply FPS to sequence (metadata write)
-    if (applyFpsBtn) applyFpsBtn.addEventListener('click', async () => {
-      try {
-        if (!(await ensureTauriReady())) return;
-        const dir = seqDirEl?.value?.trim();
-        if (!dir) { alert('Sequence Folder を指定してください'); return; }
-        const fps = parseFloat(seqFpsEl?.value ?? '24') || 24;
-        const attr = (seqAttrEl?.value || 'FramesPerSecond');
-        const recursive = !!seqRecursiveEl?.checked;
-        const dryRun = !!seqDryRunEl?.checked;
-        await logBoth(`seq_fps 実行: dir=${dir} fps=${fps} attr=${attr} recursive=${recursive} dryRun=${dryRun}`);
-
-        const t = window.__TAURI__;
-        if (t && t.event && t.event.listen && seqProg) {
-          seqProg.style.display = 'block'; seqProg.value = 0;
-          if (cancelFpsBtn) cancelFpsBtn.style.display = 'inline';
-          const unlisten = await t.event.listen('seq-progress', (e) => { try { seqProg.value = e.payload; } catch(_){} });
-          const cancelHandler = async () => { try { await invoke('cancel_seq_fps'); } catch(_){} };
-          if (cancelFpsBtn) cancelFpsBtn.addEventListener('click', cancelHandler);
-          try {
-            const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-            await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
-            if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
-          } catch (e) {
-            if (String(e).includes('cancelled')) {
-              await logBoth('seq_fps cancelled');
-            } else {
-              appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e);
-            }
-          } finally {
-            unlisten();
-            seqProg.style.display = 'none'; seqProg.value = 0;
-            if (cancelFpsBtn) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
-          }
-        } else {
-          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-          await showSeqSummary(res.success, res.failure, dryRun);
-        }
-      } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
     });
 
     // ProRes output browse
