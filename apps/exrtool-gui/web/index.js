@@ -78,6 +78,105 @@
     return false;
   }
 
+  // ----- 左パネル: メディアリスト -----
+  const leftPanel = getEl('left-panel');
+  const fileList = getEl('file-list');
+  const importBtn = getEl('import-media');
+  let draggedItem = null;
+
+  function basename(path) { return path.replace(/^.*[\\/]/, ''); }
+
+  function addFileItem(path) {
+    if (!fileList) return;
+    const li = document.createElement('li');
+    li.textContent = basename(path);
+    li.dataset.path = path;
+    li.classList.add('file');
+    li.draggable = true;
+    li.addEventListener('dragstart', () => { draggedItem = li; });
+    fileList.appendChild(li);
+  }
+
+  async function importFiles(paths) {
+    for (const p of paths) addFileItem(p);
+  }
+
+  if (importBtn) importBtn.addEventListener('click', async () => {
+    try {
+      if (!(await ensureTauriReady())) return;
+      const t = window.__TAURI__;
+      const openDlg = (t && t.dialog && t.dialog.open) || (t && t.tauri && t.tauri.dialog && t.tauri.dialog.open);
+      if (!openDlg) return;
+      const res = await openDlg({ multiple: true });
+      if (res) {
+        const arr = Array.isArray(res) ? res : [res];
+        await importFiles(arr);
+      }
+    } catch (e) { appendLog('import failed: ' + e); }
+  });
+
+  if (leftPanel) {
+    leftPanel.addEventListener('dragover', e => e.preventDefault());
+    leftPanel.addEventListener('drop', e => {
+      e.preventDefault();
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const arr = [];
+        for (const f of e.dataTransfer.files) arr.push(f.path || f.name);
+        importFiles(arr);
+      } else if (draggedItem) {
+        const folder = e.target.closest('li.folder');
+        if (folder) folder.querySelector('ul').appendChild(draggedItem);
+        else if (fileList) fileList.appendChild(draggedItem);
+        draggedItem = null;
+      }
+    });
+  }
+
+  if (fileList) fileList.addEventListener('click', async e => {
+    const li = e.target.closest('li.file');
+    if (!li) return;
+    fileList.querySelectorAll('li.selected').forEach(el => el.classList.remove('selected'));
+    li.classList.add('selected');
+    const pathEl = getEl('path');
+    if (pathEl) pathEl.value = li.dataset.path || '';
+    await openExr();
+  });
+
+  // コンテキストメニュー
+  let ctxMenu = null;
+  function closeCtxMenu() { if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
+  document.addEventListener('click', closeCtxMenu);
+  if (leftPanel) leftPanel.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    closeCtxMenu();
+    ctxMenu = document.createElement('div');
+    ctxMenu.id = 'context-menu';
+    ctxMenu.style.left = `${e.pageX}px`;
+    ctxMenu.style.top = `${e.pageY}px`;
+    const targetLi = e.target.closest('li');
+    if (targetLi && targetLi.classList.contains('file')) {
+      const del = document.createElement('div');
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => { targetLi.remove(); closeCtxMenu(); });
+      ctxMenu.appendChild(del);
+    } else {
+      const newFolder = document.createElement('div');
+      newFolder.textContent = 'New Folder';
+      newFolder.addEventListener('click', () => {
+        const name = prompt('フォルダ名'); if (!name) return;
+        const li = document.createElement('li');
+        li.classList.add('folder');
+        li.innerHTML = `<span>${name}</span><ul></ul>`;
+        li.addEventListener('dragover', ev => ev.preventDefault());
+        li.addEventListener('drop', ev => { ev.preventDefault(); if (draggedItem) { li.querySelector('ul').appendChild(draggedItem); draggedItem = null; } });
+        if (fileList) fileList.appendChild(li);
+        closeCtxMenu();
+      });
+      ctxMenu.appendChild(newFolder);
+    }
+    document.body.appendChild(ctxMenu);
+  });
+
   function drawHistogram(s) {
     const cv = getEl('hist');
     if (!cv || !s) return;

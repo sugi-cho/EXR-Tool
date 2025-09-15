@@ -1,7 +1,7 @@
 html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
 header { padding: 8px; background: #20232a; color: #fff; }
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-main { display: grid; grid-template-columns: 1fr 300px; gap: 8px; padding: 8px; }
+main { display: grid; grid-template-columns: 200px 1fr 300px; gap: 8px; padding: 8px; }
 canvas { border: 1px solid #ccc; max-width: 100%; }
 .readout { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .info { margin-top: 6px; font-size: 12px; opacity: 0.8; }
@@ -9,3 +9,13 @@ canvas { border: 1px solid #ccc; max-width: 100%; }
 #waveform { margin-bottom: 8px; }
 .scope-controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
 .logbox { border: 1px solid #444; padding: 6px; height: 300px; overflow: auto; background: #111; color: #9f9; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+#left-panel { display: flex; flex-direction: column; gap: 8px; }
+#file-list { list-style: none; margin: 0; padding: 0; flex: 1; overflow: auto; }
+#file-list li { padding: 4px; cursor: pointer; }
+#file-list li.selected { background: #cce; }
+#file-list li.folder > span { font-weight: bold; }
+#file-list li.folder ul { list-style: none; margin: 0; padding-left: 16px; }
+#context-menu { position: absolute; background: #fff; border: 1px solid #ccc; z-index: 1000; }
+#context-menu div { padding: 4px 8px; cursor: pointer; }
+#context-menu div:hover { background: #def; }
