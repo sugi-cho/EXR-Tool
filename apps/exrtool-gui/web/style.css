@@ -10,6 +10,13 @@ canvas { border: 1px solid #ccc; max-width: 100%; }
 .scope-controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
 .logbox { border: 1px solid #444; padding: 6px; height: 300px; overflow: auto; background: #111; color: #9f9; font-family: ui-monospace, Menlo, Consolas, monospace; }
 
+/* Timeline panel (PR #44) */
+#timeline-panel { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+#timeline-panel input[type="range"] { width:100%; }
+.timeline-buttons { display:flex; gap:4px; align-items:center; }
+#frame-counter { margin-left:8px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* Left panel (PR #49) */
 #left-panel { display: flex; flex-direction: column; gap: 8px; }
 #file-list { list-style: none; margin: 0; padding: 0; flex: 1; overflow: auto; }
 #file-list li { padding: 4px; cursor: pointer; }
