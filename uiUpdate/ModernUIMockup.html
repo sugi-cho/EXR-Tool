@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EXR Tool - Modern UI Mockup</title>
     <!--
-      2025-09-15 方針メモ:
+      2025-09-14 方針メモ:
       - Preview と Video を統合。中央は単一プレビュー（単一EXR/連番EXRを共通UIで再生）
+      - タイムラインと再生コントロールを中央パネル下部に配置
       - 右パネル下部に Export as Video（ProRes 等）を常設、FPSはここで指定
       - Info はメタデータの閲覧専用（編集UIは廃止）
     -->
@@ -203,7 +204,7 @@
                 
                 <!-- Info Tab Content -->
                 <div id="tab-content-info" class="tab-content hidden space-y-4 text-sm">
-                    <h3 class="text-md font-semibold text-white">Metadata</h3>
+                    <h3 class="text-md font-semibold text-white">Metadata (read-only)</h3>
                     <div class="font-mono bg-gray-900/50 p-3 rounded-md text-xs">
                         <div class="grid grid-cols-3 gap-x-4 gap-y-1">
                             <span class="text-gray-400">artist:</span> <span class="col-span-2 text-white">sugi-cho</span>
