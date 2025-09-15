@@ -226,24 +226,19 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    // Tabs
+    // Tabs (video tab removed)
     const tabBtnPreview = document.getElementById('tab-btn-preview');
-    const tabBtnVideo = document.getElementById('tab-btn-video');
     const tabBtnSettings = document.getElementById('tab-btn-settings');
     const tabPreview = document.getElementById('tab-preview');
-    const tabVideo = document.getElementById('tab-video');
     const tabSettings = document.getElementById('tab-settings');
     function activate(tab){
-      if (!tabPreview || !tabVideo || !tabSettings) return;
+      if (!tabPreview || !tabSettings) return;
       tabPreview.style.display = (tab === 'preview') ? 'block' : 'none';
-      tabVideo.style.display = (tab === 'video') ? 'block' : 'none';
       tabSettings.style.display = (tab === 'settings') ? 'block' : 'none';
       tabBtnPreview?.classList.toggle('active', tab === 'preview');
-      tabBtnVideo?.classList.toggle('active', tab === 'video');
       tabBtnSettings?.classList.toggle('active', tab === 'settings');
     }
     tabBtnPreview?.addEventListener('click', ()=>{ logBoth('tab: preview'); activate('preview'); });
-    tabBtnVideo?.addEventListener('click', ()=>{ logBoth('tab: video'); activate('video'); });
     tabBtnSettings?.addEventListener('click', ()=>{ logBoth('tab: settings'); activate('settings'); });
     logBoth('boot: video controls present? browse-seq=' + (!!document.getElementById('browse-seq')) + ', browse-prores-out=' + (!!document.getElementById('browse-prores-out')));
     const openBtn = getEl('open');
@@ -611,14 +606,14 @@
       } catch (e) { appendLog('ログ消去失敗: ' + e); }
     });
   });
-    // --- Video tab controls ---
+    // --- Video controls ---
     const seqDirEl = getEl('seq-dir');
     const browseSeqBtn = getEl('browse-seq');
     const seqFpsEl = getEl('seq-fps');
     const seqAttrEl = getEl('seq-fps-attr');
     const seqRecursiveEl = getEl('seq-fps-recursive');
     const seqDryRunEl = getEl('seq-fps-dryrun');
-    const applyFpsBtn = getEl('apply-fps');
+    const seqFpsBtn = getEl('seq-fps-btn');
     const cancelFpsBtn = getEl('cancel-fps');
     const seqProg = getEl('seq-progress');
 
@@ -632,6 +627,16 @@
     const proresOutEl = getEl('prores-out');
     const browseProresOutBtn = getEl('browse-prores-out');
     const proresProg = getEl('prores-progress');
+    const exportProresBtn = getEl('export-prores-btn');
+
+    // Progress listeners for seq_fps / export_prores
+    ensureTauriReady().then(() => {
+      const t = window.__TAURI__;
+      if (t && t.event && t.event.listen) {
+        if (seqProg) t.event.listen('seq-progress', e => { try { seqProg.value = e.payload; } catch (_) {} });
+        if (proresProg) t.event.listen('video-progress', e => { try { proresProg.value = e.payload; } catch (_) {} });
+      }
+    });
 
     // Folder browse (EXR sequence)
     if (browseSeqBtn) browseSeqBtn.addEventListener('click', async () => {
@@ -652,7 +657,7 @@
     });
 
     // Apply FPS to sequence (metadata write)
-    if (applyFpsBtn) applyFpsBtn.addEventListener('click', async () => {
+    async function runSeqFps() {
       try {
         if (!(await ensureTauriReady())) return;
         const dir = seqDirEl?.value?.trim();
@@ -663,34 +668,36 @@
         const dryRun = !!seqDryRunEl?.checked;
         await logBoth(`seq_fps 実行: dir=${dir} fps=${fps} attr=${attr} recursive=${recursive} dryRun=${dryRun}`);
 
-        const t = window.__TAURI__;
-        if (t && t.event && t.event.listen && seqProg) {
-          seqProg.style.display = 'block'; seqProg.value = 0;
-          if (cancelFpsBtn) cancelFpsBtn.style.display = 'inline';
-          const unlisten = await t.event.listen('seq-progress', (e) => { try { seqProg.value = e.payload; } catch(_){} });
-          const cancelHandler = async () => { try { await invoke('cancel_seq_fps'); } catch(_){} };
-          if (cancelFpsBtn) cancelFpsBtn.addEventListener('click', cancelHandler);
-          try {
-            const count = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+        if (seqProg) { seqProg.style.display = 'block'; seqProg.value = 0; }
+        let cancelHandler = null;
+        if (cancelFpsBtn) {
+          cancelHandler = async () => { try { await invoke('cancel_seq_fps'); } catch(_){} };
+          cancelFpsBtn.style.display = 'inline';
+          cancelFpsBtn.addEventListener('click', cancelHandler);
+        }
+        try {
+          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
+          if (typeof res === 'object' && res !== null && 'success' in res) {
+            await showSeqSummary(res.success, res.failure, dryRun);
+          } else {
+            const count = res;
             await logBoth(`seq_fps: ${dryRun ? 'dry-run ' : ''}${count} files${dryRun ? ' (no changes)' : ''}`);
             if (dryRun) alert(`対象ファイル: ${count}`); else alert(`更新ファイル: ${count}`);
-          } catch (e) {
-            if (String(e).includes('cancelled')) {
-              await logBoth('seq_fps cancelled');
-            } else {
-              appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e);
-            }
-          } finally {
-            unlisten();
-            seqProg.style.display = 'none'; seqProg.value = 0;
-            if (cancelFpsBtn) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
           }
-        } else {
-          const res = await invoke('seq_fps', { dir, fps, attr, recursive, dryRun, backup: true });
-          await showSeqSummary(res.success, res.failure, dryRun);
+        } catch (e) {
+          if (String(e).includes('cancelled')) {
+            await logBoth('seq_fps cancelled');
+          } else {
+            appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e);
+          }
+        } finally {
+          if (seqProg) { seqProg.style.display = 'none'; seqProg.value = 0; }
+          if (cancelFpsBtn && cancelHandler) { cancelFpsBtn.removeEventListener('click', cancelHandler); cancelFpsBtn.style.display = 'none'; }
         }
       } catch (e) { appendLog('seq_fps失敗: ' + e); alert('seq_fps失敗: ' + e); }
-    });
+    }
+    if (seqFpsBtn) seqFpsBtn.addEventListener('click', runSeqFps);
+    window.runSeqFps = runSeqFps;
 
     // ProRes output browse
     if (browseProresOutBtn) browseProresOutBtn.addEventListener('click', async () => {
@@ -711,8 +718,7 @@
     });
 
     // Export ProRes
-    const exportProresBtn = getEl('export-prores');
-    if (exportProresBtn) exportProresBtn.addEventListener('click', async () => {
+    async function runExportProres() {
       try {
         if (!(await ensureTauriReady())) return;
         const dir = seqDirEl?.value?.trim(); const out = proresOutEl?.value?.trim();
@@ -727,20 +733,18 @@
         const quality = (proresQualityEl?.value || 'High');
         await logBoth(`export_prores: dir=${dir} out=${out} fps=${fps} cs=${colorspace} profile=${profile}`);
 
-        // listen progress
-        const t = window.__TAURI__;
-        if (t && t.event && t.event.listen && proresProg) {
-          proresProg.style.display = 'block'; proresProg.value = 0;
-          const unlisten = await t.event.listen('video-progress', (e) => { try { proresProg.value = e.payload; } catch(_){} });
-          try {
-            await invoke('export_prores', { dir, fps, colorspace, out, profile, maxSize, exposure, gamma, quality });
-            appendLog('ProRes出力完了: ' + out);
-            alert('出力完了: ' + out);
-          } finally { unlisten(); proresProg.style.display = 'none'; }
-        } else {
+        if (proresProg) { proresProg.style.display = 'block'; proresProg.value = 0; }
+        try {
           await invoke('export_prores', { dir, fps, colorspace, out, profile, maxSize, exposure, gamma, quality });
+          appendLog('ProRes出力完了: ' + out);
           alert('出力完了: ' + out);
+        } catch (e) {
+          throw e;
+        } finally {
+          if (proresProg) { proresProg.style.display = 'none'; proresProg.value = 0; }
         }
       } catch (e) { appendLog('ProRes出力失敗: ' + e); alert('ProRes出力失敗: ' + e); }
-    });
+    }
+    if (exportProresBtn) exportProresBtn.addEventListener('click', runExportProres);
+    window.runExportProres = runExportProres;
 })();
