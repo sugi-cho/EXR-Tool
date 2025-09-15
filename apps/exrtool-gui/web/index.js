@@ -11,6 +11,10 @@
   let waveform = null;
   let scopeChannel = 'rgb';
   let scopeScale = 1;
+  let previewMode = 'rgb';
+  let compareMode = false;
+  let currImgData = null;
+  let prevImgData = null;
 
   // 簡易デバウンス
   function debounce(fn, ms) {
@@ -235,6 +239,33 @@
     } catch (e) { console.error('refreshScopes failed', e); }
   }
 
+  function updateInfoText() {
+    const info = getEl('info');
+    if (!info) return;
+    const mode = previewMode === 'rgb' ? 'RGB' : 'A';
+    const ab = compareMode ? 'B' : 'A';
+    info.textContent = `preview: ${imgW}x${imgH} (${mode}/${ab})`;
+  }
+
+  function renderPreview() {
+    const cv = getEl('cv');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const src = (compareMode && prevImgData) ? prevImgData : currImgData;
+    if (!src) return;
+    const data = new Uint8ClampedArray(src.data);
+    if (previewMode === 'a') {
+      for (let i = 0; i < data.length; i += 4) {
+        const a = data[i + 3];
+        data[i] = data[i + 1] = data[i + 2] = a;
+        data[i + 3] = 255;
+      }
+    }
+    const imgData = new ImageData(data, src.width, src.height);
+    ctx.putImageData(imgData, 0, 0);
+    updateInfoText();
+  }
+
   async function openExr() {
     const pathEl = getEl('path');
     // OCIO要素の参照は必要時のみ取得（openExr内では未使用）
@@ -262,7 +293,11 @@
         cv.width = w; cv.height = h;
         ctx.clearRect(0,0,w,h);
         ctx.drawImage(img, 0, 0);
-        info.textContent = `preview: ${w}x${h}`;
+        prevImgData = currImgData;
+        currImgData = ctx.getImageData(0,0,w,h);
+        compareMode = false;
+        getEl('btn-compare')?.classList.remove('active');
+        renderPreview();
         appendLog(`open ok: ${w}x${h}`);
       };
       img.src = 'data:image/png;base64,' + b64;
@@ -332,6 +367,9 @@
     attrTable = getEl('attr-table');
     const scopeChannelEl = getEl('scope-channel');
     const scopeScaleEl = getEl('scope-scale');
+    const viewRgbBtn = getEl('btn-view-rgb');
+    const viewAlphaBtn = getEl('btn-view-alpha');
+    const compareBtn = getEl('btn-compare');
 
     useStateLutEnabled = true;
     scopeChannelEl?.addEventListener('change', () => {
@@ -343,6 +381,33 @@
       scopeScale = parseInt(scopeScaleEl.value)||1;
       drawHistogram(stats);
       drawWaveform(waveform);
+    });
+
+    function setChannel(mode){
+      previewMode = mode;
+      viewRgbBtn?.classList.toggle('active', mode === 'rgb');
+      viewAlphaBtn?.classList.toggle('active', mode === 'a');
+      logBoth('channel: ' + (mode === 'rgb' ? 'RGB' : 'A'));
+      renderPreview();
+    }
+
+    function toggleCompare(){
+      if (!prevImgData) { return; }
+      compareMode = !compareMode;
+      compareBtn?.classList.toggle('active', compareMode);
+      logBoth('compare: ' + (compareMode ? 'B' : 'A'));
+      renderPreview();
+    }
+
+    viewRgbBtn?.addEventListener('click', () => setChannel('rgb'));
+    viewAlphaBtn?.addEventListener('click', () => setChannel('a'));
+    compareBtn?.addEventListener('click', toggleCompare);
+
+    document.addEventListener('keydown', (e) => {
+      if (['INPUT','SELECT','TEXTAREA'].includes(e.target?.tagName)) return;
+      if (e.key === 'j' || e.key === 'ArrowLeft') setChannel('rgb');
+      else if (e.key === 'l' || e.key === 'ArrowRight') setChannel('a');
+      else if (e.key === 'k' || e.key === 'ArrowUp' || e.key === 'ArrowDown') toggleCompare();
     });
 
     if (openBtn) openBtn.addEventListener('click', openExr);
@@ -528,13 +593,15 @@
           highQuality: true
         });
         const img = new Image();
-        const info = getEl('info');
         img.onload = () => {
           const ctx = cv.getContext('2d');
           cv.width = w; cv.height = h;
           ctx.clearRect(0, 0, w, h);
           ctx.drawImage(img, 0, 0);
-          if (info) info.textContent = `preview: ${w}x${h}`;
+          imgW = w; imgH = h;
+          prevImgData = currImgData;
+          currImgData = ctx.getImageData(0,0,w,h);
+          renderPreview();
         };
         img.src = 'data:image/png;base64,' + b64;
         await refreshScopes();
